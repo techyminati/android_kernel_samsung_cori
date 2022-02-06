@@ -481,9 +481,9 @@ int omap_st_is_enabled(unsigned int id)
 EXPORT_SYMBOL(omap_st_is_enabled);
 
 /*
- * omap_mcbsp_set_rx_threshold configures the transmit threshold in words.
- * The threshold parameter is 1 based, and it is converted (threshold - 1)
- * for the THRSH2 register.
+ * omap_mcbsp_set_tx_threshold configures how to deal
+ * with transmit threshold. the threshold value and handler can be
+ * configure in here.
  */
 void omap_mcbsp_set_tx_threshold(unsigned int id, u16 threshold)
 {
@@ -498,15 +498,14 @@ void omap_mcbsp_set_tx_threshold(unsigned int id, u16 threshold)
 	}
 	mcbsp = id_to_mcbsp_ptr(id);
 
-	if (threshold && threshold <= mcbsp->max_tx_thres)
-		MCBSP_WRITE(mcbsp, THRSH2, threshold - 1);
+	MCBSP_WRITE(mcbsp, THRSH2, threshold);
 }
 EXPORT_SYMBOL(omap_mcbsp_set_tx_threshold);
 
 /*
- * omap_mcbsp_set_rx_threshold configures the receive threshold in words.
- * The threshold parameter is 1 based, and it is converted (threshold - 1)
- * for the THRSH1 register.
+ * omap_mcbsp_set_rx_threshold configures how to deal
+ * with receive threshold. the threshold value and handler can be
+ * configure in here.
  */
 void omap_mcbsp_set_rx_threshold(unsigned int id, u16 threshold)
 {
@@ -521,8 +520,7 @@ void omap_mcbsp_set_rx_threshold(unsigned int id, u16 threshold)
 	}
 	mcbsp = id_to_mcbsp_ptr(id);
 
-	if (threshold && threshold <= mcbsp->max_rx_thres)
-		MCBSP_WRITE(mcbsp, THRSH1, threshold - 1);
+	MCBSP_WRITE(mcbsp, THRSH1, threshold);
 }
 EXPORT_SYMBOL(omap_mcbsp_set_rx_threshold);
 
@@ -562,20 +560,8 @@ u16 omap_mcbsp_get_max_rx_threshold(unsigned int id)
 }
 EXPORT_SYMBOL(omap_mcbsp_get_max_rx_threshold);
 
-u16 omap_mcbsp_get_fifo_size(unsigned int id)
-{
-	struct omap_mcbsp *mcbsp;
-
-	if (!omap_mcbsp_check_valid_id(id)) {
-		printk(KERN_ERR "%s: Invalid id (%d)\n", __func__, id + 1);
-		return -ENODEV;
-	}
-	mcbsp = id_to_mcbsp_ptr(id);
-
-	return mcbsp->pdata->buffer_size;
-}
-EXPORT_SYMBOL(omap_mcbsp_get_fifo_size);
-
+#define MCBSP2_FIFO_SIZE	0x500 /* 1024 + 256 locations */
+#define MCBSP1345_FIFO_SIZE	0x80  /* 128 locations */
 /*
  * omap_mcbsp_get_tx_delay returns the number of used slots in the McBSP FIFO
  */
@@ -594,7 +580,10 @@ u16 omap_mcbsp_get_tx_delay(unsigned int id)
 	buffstat = MCBSP_READ(mcbsp, XBUFFSTAT);
 
 	/* Number of slots are different in McBSP ports */
-	return mcbsp->pdata->buffer_size - buffstat;
+	if (mcbsp->id == 2)
+		return MCBSP2_FIFO_SIZE - buffstat;
+	else
+		return MCBSP1345_FIFO_SIZE - buffstat;
 }
 EXPORT_SYMBOL(omap_mcbsp_get_tx_delay);
 
@@ -1694,16 +1683,8 @@ static inline void __devinit omap34xx_device_init(struct omap_mcbsp *mcbsp)
 {
 	mcbsp->dma_op_mode = MCBSP_DMA_MODE_ELEMENT;
 	if (cpu_is_omap34xx()) {
-		/*
-		 * Initially configure the maximum thresholds to a safe value.
-		 * The McBSP FIFO usage with these values should not go under
-		 * 16 locations.
-		 * If the whole FIFO without safety buffer is used, than there
-		 * is a possibility that the DMA will be not able to push the
-		 * new data on time, causing channel shifts in runtime.
-		 */
-		mcbsp->max_tx_thres = max_thres(mcbsp) - 0x10;
-		mcbsp->max_rx_thres = max_thres(mcbsp) - 0x10;
+		mcbsp->max_tx_thres = max_thres(mcbsp);
+		mcbsp->max_rx_thres = max_thres(mcbsp);
 		/*
 		 * REVISIT: Set dmap_op_mode to THRESHOLD as default
 		 * for mcbsp2 instances.

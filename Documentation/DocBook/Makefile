@@ -35,7 +35,7 @@ PS_METHOD	= $(prefer-db2x)
 PHONY += xmldocs sgmldocs psdocs pdfdocs htmldocs mandocs installmandocs cleandocs xmldoclinks
 
 BOOKS := $(addprefix $(obj)/,$(DOCBOOKS))
-xmldocs: $(BOOKS)
+xmldocs: $(BOOKS) xmldoclinks
 sgmldocs: xmldocs
 
 PS := $(patsubst %.xml, %.ps, $(BOOKS))
@@ -45,7 +45,7 @@ PDF := $(patsubst %.xml, %.pdf, $(BOOKS))
 pdfdocs: $(PDF)
 
 HTML := $(sort $(patsubst %.xml, %.html, $(BOOKS)))
-htmldocs: $(HTML) xmldoclinks
+htmldocs: $(HTML)
 	$(call build_main_index)
 	$(call build_images)
 
@@ -95,7 +95,7 @@ define rule_docproc
         ) > $(dir $@).$(notdir $@).cmd
 endef
 
-%.xml: %.tmpl xmldoclinks FORCE
+%.xml: %.tmpl FORCE
 	$(call if_changed_rule,docproc)
 
 ###

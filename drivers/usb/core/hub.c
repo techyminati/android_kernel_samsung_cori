@@ -1295,7 +1295,6 @@ descriptor_error:
 	return -ENODEV;
 }
 
-/* No BKL needed */
 static int
 hub_ioctl(struct usb_interface *intf, unsigned int code, void *user_data)
 {
@@ -2881,9 +2880,7 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 	}
 
 	retval = 0;
-	/* notify HCD that we have a device connected and addressed */
-	if (hcd->driver->update_device)
-		hcd->driver->update_device(hcd, udev);
+
 fail:
 	if (retval) {
 		hub_port_disable(hub, port1, 0);
@@ -3470,7 +3467,7 @@ static struct usb_driver hub_driver = {
 	.reset_resume =	hub_reset_resume,
 	.pre_reset =	hub_pre_reset,
 	.post_reset =	hub_post_reset,
-	.unlocked_ioctl = hub_ioctl,
+	.ioctl =	hub_ioctl,
 	.id_table =	hub_id_table,
 	.supports_autosuspend =	1,
 };

@@ -1356,7 +1356,7 @@ static int wm9081_register(struct wm9081_priv *wm9081,
 	ret = snd_soc_codec_set_cache_io(codec, 8, 16, control);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
-		goto err;
+		return ret;
 	}
 
 	reg = snd_soc_read(codec, WM9081_SOFTWARE_RESET);
@@ -1369,7 +1369,7 @@ static int wm9081_register(struct wm9081_priv *wm9081,
 	ret = wm9081_reset(codec);
 	if (ret < 0) {
 		dev_err(codec->dev, "Failed to issue reset\n");
-		goto err;
+		return ret;
 	}
 
 	wm9081_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
@@ -1388,19 +1388,18 @@ static int wm9081_register(struct wm9081_priv *wm9081,
 	ret = snd_soc_register_codec(codec);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to register codec: %d\n", ret);
-		goto err;
+		return ret;
 	}
 
 	ret = snd_soc_register_dai(&wm9081_dai);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to register DAI: %d\n", ret);
-		goto err_codec;
+		snd_soc_unregister_codec(codec);
+		return ret;
 	}
 
 	return 0;
 
-err_codec:
-	snd_soc_unregister_codec(codec);
 err:
 	kfree(wm9081);
 	return ret;

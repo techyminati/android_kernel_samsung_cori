@@ -19,8 +19,6 @@
  *
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -34,7 +32,6 @@
 #include <linux/blkdev.h>
 #include <linux/interrupt.h>
 #include <linux/device.h>
-#include <linux/smp_lock.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 #include <linux/platform_device.h>
@@ -342,7 +339,8 @@ static int gdrom_get_last_session(struct cdrom_device_info *cd_info,
 		tocuse = 0;
 		err = gdrom_readtoc_cmd(gd.toc, 0);
 		if (err) {
-			pr_info("Could not get CD table of contents\n");
+			printk(KERN_INFO "GDROM: Could not get CD "
+				"table of contents\n");
 			return -ENXIO;
 		}
 	}
@@ -359,7 +357,8 @@ static int gdrom_get_last_session(struct cdrom_device_info *cd_info,
 	} while (track >= fentry);
 
 	if ((track > 100) || (track < get_entry_track(gd.toc->first))) {
-		pr_info("No data on the last session of the CD\n");
+		printk(KERN_INFO "GDROM: No data on the last "
+			"session of the CD\n");
 		gdrom_getsense(NULL);
 		return -ENXIO;
 	}
@@ -452,14 +451,14 @@ static int gdrom_getsense(short *bufstring)
 		goto cleanup_sense;
 	insw(GDROM_DATA_REG, &sense, sense_command->buflen/2);
 	if (sense[1] & 40) {
-		pr_info("Drive not ready - command aborted\n");
+		printk(KERN_INFO "GDROM: Drive not ready - command aborted\n");
 		goto cleanup_sense;
 	}
 	sense_key = sense[1] & 0x0F;
 	if (sense_key < ARRAY_SIZE(sense_texts))
-		pr_info("%s\n", sense_texts[sense_key].text);
+		printk(KERN_INFO "GDROM: %s\n", sense_texts[sense_key].text);
 	else
-		pr_err("Unknown sense key: %d\n", sense_key);
+		printk(KERN_ERR "GDROM: Unknown sense key: %d\n", sense_key);
 	if (bufstring) /* return addional sense data */
 		memcpy(bufstring, &sense[4], 2);
 	if (sense_key < 2)
@@ -493,18 +492,12 @@ static struct cdrom_device_ops gdrom_ops = {
 
 static int gdrom_bdops_open(struct block_device *bdev, fmode_t mode)
 {
-	int ret;
-	lock_kernel();
-	ret = cdrom_open(gd.cd_info, bdev, mode);
-	unlock_kernel();
-	return ret;
+	return cdrom_open(gd.cd_info, bdev, mode);
 }
 
 static int gdrom_bdops_release(struct gendisk *disk, fmode_t mode)
 {
-	lock_kernel();
 	cdrom_release(gd.cd_info, mode);
-	unlock_kernel();
 	return 0;
 }
 
@@ -516,13 +509,7 @@ static int gdrom_bdops_mediachanged(struct gendisk *disk)
 static int gdrom_bdops_ioctl(struct block_device *bdev, fmode_t mode,
 	unsigned cmd, unsigned long arg)
 {
-	int ret;
-
-	lock_kernel();
-	ret = cdrom_ioctl(gd.cd_info, bdev, mode, cmd, arg);
-	unlock_kernel();
-
-	return ret;
+	return cdrom_ioctl(gd.cd_info, bdev, mode, cmd, arg);
 }
 
 static const struct block_device_operations gdrom_bdops = {
@@ -530,7 +517,7 @@ static const struct block_device_operations gdrom_bdops = {
 	.open			= gdrom_bdops_open,
 	.release		= gdrom_bdops_release,
 	.media_changed		= gdrom_bdops_mediachanged,
-	.ioctl			= gdrom_bdops_ioctl,
+	.locked_ioctl		= gdrom_bdops_ioctl,
 };
 
 static irqreturn_t gdrom_command_interrupt(int irq, void *dev_id)
@@ -656,13 +643,14 @@ static void gdrom_request(struct request_queue *rq)
 	struct request *req;
 
 	while ((req = blk_fetch_request(rq)) != NULL) {
-		if (req->cmd_type != REQ_TYPE_FS) {
-			printk(KERN_DEBUG "gdrom: Non-fs request ignored\n");
+		if (!blk_fs_request(req)) {
+			printk(KERN_DEBUG "GDROM: Non-fs request ignored\n");
 			__blk_end_request_all(req, -EIO);
 			continue;
 		}
 		if (rq_data_dir(req) != READ) {
-			pr_notice("Read only device - write request ignored\n");
+			printk(KERN_NOTICE "GDROM: Read only device -");
+			printk(" write request ignored\n");
 			__blk_end_request_all(req, -EIO);
 			continue;
 		}
@@ -697,7 +685,7 @@ static int __devinit gdrom_outputversion(void)
 	firmw_ver = kstrndup(id->firmver, 16, GFP_KERNEL);
 	if (!firmw_ver)
 		goto free_manuf_name;
-	pr_info("%s from %s with firmware %s\n",
+	printk(KERN_INFO "GDROM: %s from %s with firmware %s\n",
 		model_name, manuf_name, firmw_ver);
 	err = 0;
 	kfree(firmw_ver);
@@ -769,7 +757,7 @@ static int __devinit probe_gdrom(struct platform_device *devptr)
 	int err;
 	/* Start the device */
 	if (gdrom_execute_diagnostic() != 1) {
-		pr_warning("ATA Probe for GDROM failed\n");
+		printk(KERN_WARNING "GDROM: ATA Probe for GDROM failed.\n");
 		return -ENODEV;
 	}
 	/* Print out firmware ID */
@@ -779,7 +767,7 @@ static int __devinit probe_gdrom(struct platform_device *devptr)
 	gdrom_major = register_blkdev(0, GDROM_DEV_NAME);
 	if (gdrom_major <= 0)
 		return gdrom_major;
-	pr_info("Registered with major number %d\n",
+	printk(KERN_INFO "GDROM: Registered with major number %d\n",
 		gdrom_major);
 	/* Specify basic properties of drive */
 	gd.cd_info = kzalloc(sizeof(struct cdrom_device_info), GFP_KERNEL);
@@ -830,7 +818,7 @@ probe_fail_no_disk:
 	unregister_blkdev(gdrom_major, GDROM_DEV_NAME);
 	gdrom_major = 0;
 probe_fail_no_mem:
-	pr_warning("Probe failed - error is 0x%X\n", err);
+	printk(KERN_WARNING "GDROM: Probe failed - error is 0x%X\n", err);
 	return err;
 }
 

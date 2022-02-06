@@ -34,7 +34,6 @@
 #include "i915_drm.h"
 #include "i915_drv.h"
 #include "i915_trace.h"
-#include <linux/pci.h>
 #include <linux/vgaarb.h>
 #include <linux/acpi.h>
 #include <linux/pnp.h>
@@ -613,8 +612,10 @@ static int i915_batchbuffer(struct drm_device *dev, void *data,
 		ret = copy_from_user(cliprects, batch->cliprects,
 				     batch->num_cliprects *
 				     sizeof(struct drm_clip_rect));
-		if (ret != 0)
+		if (ret != 0) {
+			ret = -EFAULT;
 			goto fail_free;
+		}
 	}
 
 	mutex_lock(&dev->struct_mutex);
@@ -655,8 +656,10 @@ static int i915_cmdbuffer(struct drm_device *dev, void *data,
 		return -ENOMEM;
 
 	ret = copy_from_user(batch_data, cmdbuf->buf, cmdbuf->sz);
-	if (ret != 0)
+	if (ret != 0) {
+		ret = -EFAULT;
 		goto fail_batch_free;
+	}
 
 	if (cmdbuf->num_cliprects) {
 		cliprects = kcalloc(cmdbuf->num_cliprects,
@@ -669,8 +672,10 @@ static int i915_cmdbuffer(struct drm_device *dev, void *data,
 		ret = copy_from_user(cliprects, cmdbuf->cliprects,
 				     cmdbuf->num_cliprects *
 				     sizeof(struct drm_clip_rect));
-		if (ret != 0)
+		if (ret != 0) {
+			ret = -EFAULT;
 			goto fail_clip_free;
+		}
 	}
 
 	mutex_lock(&dev->struct_mutex);
@@ -878,7 +883,7 @@ intel_alloc_mchbar_resource(struct drm_device *dev)
 	int reg = IS_I965G(dev) ? MCHBAR_I965 : MCHBAR_I915;
 	u32 temp_lo, temp_hi = 0;
 	u64 mchbar_addr;
-	int ret = 0;
+	int ret;
 
 	if (IS_I965G(dev))
 		pci_read_config_dword(dev_priv->bridge_dev, reg + 4, &temp_hi);
@@ -888,22 +893,23 @@ intel_alloc_mchbar_resource(struct drm_device *dev)
 	/* If ACPI doesn't have it, assume we need to allocate it ourselves */
 #ifdef CONFIG_PNP
 	if (mchbar_addr &&
-	    pnp_range_reserved(mchbar_addr, mchbar_addr + MCHBAR_SIZE)) {
-		ret = 0;
-		goto out;
-	}
+	    pnp_range_reserved(mchbar_addr, mchbar_addr + MCHBAR_SIZE))
+		return 0;
 #endif
 
 	/* Get some space for it */
-	ret = pci_bus_alloc_resource(dev_priv->bridge_dev->bus, &dev_priv->mch_res,
+	dev_priv->mch_res.name = "i915 MCHBAR";
+	dev_priv->mch_res.flags = IORESOURCE_MEM;
+	ret = pci_bus_alloc_resource(dev_priv->bridge_dev->bus,
+				     &dev_priv->mch_res,
 				     MCHBAR_SIZE, MCHBAR_SIZE,
 				     PCIBIOS_MIN_MEM,
-				     0,   pcibios_align_resource,
+				     0, pcibios_align_resource,
 				     dev_priv->bridge_dev);
 	if (ret) {
 		DRM_DEBUG_DRIVER("failed bus alloc: %d\n", ret);
 		dev_priv->mch_res.start = 0;
-		goto out;
+		return ret;
 	}
 
 	if (IS_I965G(dev))
@@ -912,8 +918,7 @@ intel_alloc_mchbar_resource(struct drm_device *dev)
 
 	pci_write_config_dword(dev_priv->bridge_dev, reg,
 			       lower_32_bits(dev_priv->mch_res.start));
-out:
-	return ret;
+	return 0;
 }
 
 /* Setup MCHBAR if possible, return true if we should disable it again */
@@ -1259,7 +1264,7 @@ static void i915_setup_compression(struct drm_device *dev, int size)
 		drm_mm_put_block(compressed_fb);
 	}
 
-	if (!(IS_GM45(dev) || IS_IRONLAKE_M(dev))) {
+	if (!IS_GM45(dev)) {
 		compressed_llb = drm_mm_search_free(&dev_priv->vram, 4096,
 						    4096, 0);
 		if (!compressed_llb) {
@@ -1285,9 +1290,8 @@ static void i915_setup_compression(struct drm_device *dev, int size)
 
 	intel_disable_fbc(dev);
 	dev_priv->compressed_fb = compressed_fb;
-	if (IS_IRONLAKE_M(dev))
-		I915_WRITE(ILK_DPFC_CB_BASE, compressed_fb->start);
-	else if (IS_GM45(dev)) {
+
+	if (IS_GM45(dev)) {
 		I915_WRITE(DPFC_CB_BASE, compressed_fb->start);
 	} else {
 		I915_WRITE(FBC_CFB_BASE, cfb_base);
@@ -1295,7 +1299,7 @@ static void i915_setup_compression(struct drm_device *dev, int size)
 		dev_priv->compressed_llb = compressed_llb;
 	}
 
-	DRM_DEBUG_KMS("FBC base 0x%08lx, ll base 0x%08lx, size %dM\n", cfb_base,
+	DRM_DEBUG("FBC base 0x%08lx, ll base 0x%08lx, size %dM\n", cfb_base,
 		  ll_base, size >> 20);
 }
 
@@ -1358,7 +1362,7 @@ static int i915_load_modeset_init(struct drm_device *dev,
 	int fb_bar = IS_I9XX(dev) ? 2 : 0;
 	int ret = 0;
 
-	dev->mode_config.fb_base = pci_resource_start(dev->pdev, fb_bar) &
+	dev->mode_config.fb_base = drm_get_resource_start(dev, fb_bar) &
 		0xff000000;
 
 	/* Basic memrange allocator for stolen space (aka vram) */
@@ -2067,13 +2071,17 @@ int i915_driver_load(struct drm_device *dev, unsigned long flags)
 
 	/* Add register map (needed for suspend/resume) */
 	mmio_bar = IS_I9XX(dev) ? 0 : 1;
-	base = pci_resource_start(dev->pdev, mmio_bar);
-	size = pci_resource_len(dev->pdev, mmio_bar);
+	base = drm_get_resource_start(dev, mmio_bar);
+	size = drm_get_resource_len(dev, mmio_bar);
 
 	if (i915_get_bridge_dev(dev)) {
 		ret = -EIO;
 		goto free_priv;
 	}
+
+	/* overlay on gen2 is broken and can't address above 1G */
+	if (IS_GEN2(dev))
+		dma_set_coherent_mask(&dev->pdev->dev, DMA_BIT_MASK(30));
 
 	dev_priv->regs = ioremap(base, size);
 	if (!dev_priv->regs) {

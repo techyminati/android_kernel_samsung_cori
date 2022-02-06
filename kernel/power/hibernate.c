@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2003 Patrick Mochel
  * Copyright (c) 2003 Open Source Development Lab
- * Copyright (c) 2004 Pavel Machek <pavel@ucw.cz>
+ * Copyright (c) 2004 Pavel Machek <pavel@suse.cz>
  * Copyright (c) 2009 Rafael J. Wysocki, Novell Inc.
  *
  * This file is released under the GPLv2.
@@ -277,7 +277,7 @@ static int create_image(int platform_mode)
 		goto Enable_irqs;
 	}
 
-	if (hibernation_test(TEST_CORE) || !pm_check_wakeup_events())
+	if (hibernation_test(TEST_CORE))
 		goto Power_up;
 
 	in_suspend = 1;
@@ -288,10 +288,8 @@ static int create_image(int platform_mode)
 			error);
 	/* Restore control flow magically appears here */
 	restore_processor_state();
-	if (!in_suspend) {
-		events_check_enabled = false;
+	if (!in_suspend)
 		platform_leave(platform_mode);
-	}
 
  Power_up:
 	sysdev_resume();
@@ -330,7 +328,7 @@ int hibernation_snapshot(int platform_mode)
 
 	error = platform_begin(platform_mode);
 	if (error)
-		goto Close;
+		return error;
 
 	/* Preallocate image memory before shutting down devices. */
 	error = hibernate_preallocate_memory();
@@ -338,7 +336,6 @@ int hibernation_snapshot(int platform_mode)
 		goto Close;
 
 	suspend_console();
-	hibernation_freeze_swap();
 	saved_mask = clear_gfp_allowed_mask(GFP_IOFS);
 	error = dpm_suspend_start(PMSG_FREEZE);
 	if (error)
@@ -514,24 +511,18 @@ int hibernation_platform_enter(void)
 
 	local_irq_disable();
 	sysdev_suspend(PMSG_HIBERNATE);
-	if (!pm_check_wakeup_events()) {
-		error = -EAGAIN;
-		goto Power_up;
-	}
-
 	hibernation_ops->enter();
 	/* We should never get here */
 	while (1);
 
- Power_up:
-	sysdev_resume();
-	local_irq_enable();
-	enable_nonboot_cpus();
-
+	/*
+	 * We don't need to reenable the nonboot CPUs or resume consoles, since
+	 * the system is going to be halted anyway.
+	 */
  Platform_finish:
 	hibernation_ops->finish();
 
-	dpm_resume_noirq(PMSG_RESTORE);
+	dpm_suspend_noirq(PMSG_RESTORE);
 
  Resume_devices:
 	entering_platform_hibernation = false;

@@ -43,6 +43,7 @@
 #include <asm/io.h>
 #include <asm/system.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ds.h>
@@ -97,8 +98,9 @@ static int ide_probe(struct pcmcia_device *link)
     info->p_dev = link;
     link->priv = info;
 
-    link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
-    link->resource[1]->flags |= IO_DATA_PATH_WIDTH_8;
+    link->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
+    link->io.Attributes2 = IO_DATA_PATH_WIDTH_8;
+    link->io.IOAddrLines = 3;
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.IntType = INT_MEMORY_AND_IO;
 
@@ -227,27 +229,24 @@ static int pcmcia_check_one_config(struct pcmcia_device *pdev,
 
 	if ((cfg->io.nwin > 0) || (dflt->io.nwin > 0)) {
 		cistpl_io_t *io = (cfg->io.nwin) ? &cfg->io : &dflt->io;
-		pdev->io_lines = io->flags & CISTPL_IO_LINES_MASK;
-
 		pdev->conf.ConfigIndex = cfg->index;
-		pdev->resource[0]->start = io->win[0].base;
-		if (!(io->flags & CISTPL_IO_16BIT)) {
-			pdev->resource[0]->flags &= ~IO_DATA_PATH_WIDTH;
-			pdev->resource[0]->flags |= IO_DATA_PATH_WIDTH_8;
-		}
+		pdev->io.BasePort1 = io->win[0].base;
+		pdev->io.IOAddrLines = io->flags & CISTPL_IO_LINES_MASK;
+		if (!(io->flags & CISTPL_IO_16BIT))
+			pdev->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
 		if (io->nwin == 2) {
-			pdev->resource[0]->end = 8;
-			pdev->resource[1]->start = io->win[1].base;
-			pdev->resource[1]->end = (stk->is_kme) ? 2 : 1;
-			if (pcmcia_request_io(pdev) != 0)
+			pdev->io.NumPorts1 = 8;
+			pdev->io.BasePort2 = io->win[1].base;
+			pdev->io.NumPorts2 = (stk->is_kme) ? 2 : 1;
+			if (pcmcia_request_io(pdev, &pdev->io) != 0)
 				return -ENODEV;
-			stk->ctl_base = pdev->resource[1]->start;
+			stk->ctl_base = pdev->io.BasePort2;
 		} else if ((io->nwin == 1) && (io->win[0].len >= 16)) {
-			pdev->resource[0]->end = io->win[0].len;
-			pdev->resource[1]->end = 0;
-			if (pcmcia_request_io(pdev) != 0)
+			pdev->io.NumPorts1 = io->win[0].len;
+			pdev->io.NumPorts2 = 0;
+			if (pcmcia_request_io(pdev, &pdev->io) != 0)
 				return -ENODEV;
-			stk->ctl_base = pdev->resource[0]->start + 0x0e;
+			stk->ctl_base = pdev->io.BasePort1 + 0x0e;
 		} else
 			return -ENODEV;
 		/* If we've got this far, we're done */
@@ -281,7 +280,7 @@ static int ide_config(struct pcmcia_device *link)
 	    if (pcmcia_loop_config(link, pcmcia_check_one_config, stk))
 		    goto failed; /* No suitable config found */
     }
-    io_base = link->resource[0]->start;
+    io_base = link->io.BasePort1;
     ctl_base = stk->ctl_base;
 
     if (!link->irq)
@@ -298,7 +297,7 @@ static int ide_config(struct pcmcia_device *link)
 	outb(0x81, ctl_base+1);
 
      host = idecs_register(io_base, ctl_base, link->irq, link);
-     if (host == NULL && resource_size(link->resource[0]) == 0x20) {
+     if (host == NULL && link->io.NumPorts1 == 0x20) {
 	    outb(0x02, ctl_base + 0x10);
 	    host = idecs_register(io_base + 0x10, ctl_base + 0x10,
 				  link->irq, link);

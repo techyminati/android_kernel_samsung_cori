@@ -96,12 +96,10 @@ nilfs_btnode_create_block(struct address_space *btnc, __u64 blocknr)
 }
 
 int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
-			      sector_t pblocknr, int mode,
-			      struct buffer_head **pbh, sector_t *submit_ptr)
+			      sector_t pblocknr, struct buffer_head **pbh)
 {
 	struct buffer_head *bh;
 	struct inode *inode = NILFS_BTNC_I(btnc);
-	struct page *page;
 	int err;
 
 	bh = nilfs_grab_buffer(inode, btnc, blocknr, 1 << BH_NILFS_Node);
@@ -109,7 +107,6 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 		return -ENOMEM;
 
 	err = -EEXIST; /* internal code */
-	page = bh->b_page;
 
 	if (buffer_uptodate(bh) || buffer_dirty(bh))
 		goto found;
@@ -128,16 +125,7 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 			}
 		}
 	}
-
-	if (mode == READA) {
-		if (pblocknr != *submit_ptr + 1 || !trylock_buffer(bh)) {
-			err = -EBUSY; /* internal code */
-			brelse(bh);
-			goto out_locked;
-		}
-	} else { /* mode == READ */
-		lock_buffer(bh);
-	}
+	lock_buffer(bh);
 	if (buffer_uptodate(bh)) {
 		unlock_buffer(bh);
 		err = -EEXIST; /* internal code */
@@ -148,16 +136,15 @@ int nilfs_btnode_submit_block(struct address_space *btnc, __u64 blocknr,
 	bh->b_blocknr = pblocknr; /* set block address for read */
 	bh->b_end_io = end_buffer_read_sync;
 	get_bh(bh);
-	submit_bh(mode, bh);
+	submit_bh(READ, bh);
 	bh->b_blocknr = blocknr; /* set back to the given block address */
-	*submit_ptr = pblocknr;
 	err = 0;
 found:
 	*pbh = bh;
 
 out_locked:
-	unlock_page(page);
-	page_cache_release(page);
+	unlock_page(bh->b_page);
+	page_cache_release(bh->b_page);
 	return err;
 }
 

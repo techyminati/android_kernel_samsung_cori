@@ -15,6 +15,8 @@ obj-$(CONFIG_SERIAL_SUNSU) += sunsu.o
 obj-$(CONFIG_SERIAL_SUNSAB) += sunsab.o
 
 obj-$(CONFIG_SERIAL_8250) += 8250.o
+# temp work arround. make own module
+obj-$(CONFIG_SERIAL_8250) += brcm_bt_lpm.o
 obj-$(CONFIG_SERIAL_8250_PNP) += 8250_pnp.o
 obj-$(CONFIG_SERIAL_8250_GSC) += 8250_gsc.o
 obj-$(CONFIG_SERIAL_8250_PCI) += 8250_pci.o
@@ -46,8 +48,6 @@ obj-$(CONFIG_SERIAL_S3C24A0) += s3c24a0.o
 obj-$(CONFIG_SERIAL_S3C6400) += s3c6400.o
 obj-$(CONFIG_SERIAL_S5PV210) += s5pv210.o
 obj-$(CONFIG_SERIAL_MAX3100) += max3100.o
-obj-$(CONFIG_SERIAL_MAX3107) += max3107.o
-obj-$(CONFIG_SERIAL_MAX3107_AAVA) += max3107-aava.o
 obj-$(CONFIG_SERIAL_IP22_ZILOG) += ip22zilog.o
 obj-$(CONFIG_SERIAL_MUX) += mux.o
 obj-$(CONFIG_SERIAL_68328) += 68328serial.o
@@ -86,5 +86,3 @@ obj-$(CONFIG_SERIAL_TIMBERDALE)	+= timbuart.o
 obj-$(CONFIG_SERIAL_GRLIB_GAISLER_APBUART) += apbuart.o
 obj-$(CONFIG_SERIAL_ALTERA_JTAGUART) += altera_jtaguart.o
 obj-$(CONFIG_SERIAL_ALTERA_UART) += altera_uart.o
-obj-$(CONFIG_SERIAL_MRST_MAX3110)	+= mrst_max3110.o
-obj-$(CONFIG_SERIAL_MFD_HSU)	+= mfd.o

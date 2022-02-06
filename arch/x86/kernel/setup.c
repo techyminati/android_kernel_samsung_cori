@@ -102,7 +102,6 @@
 
 #include <asm/paravirt.h>
 #include <asm/hypervisor.h>
-#include <asm/olpc_ofw.h>
 
 #include <asm/percpu.h>
 #include <asm/topology.h>
@@ -737,14 +736,9 @@ void __init setup_arch(char **cmdline_p)
 	/* VMI may relocate the fixmap; do this before touching ioremap area */
 	vmi_init();
 
-	/* OFW also may relocate the fixmap */
-	olpc_ofw_detect();
-
 	early_trap_init();
 	early_cpu_init();
 	early_ioremap_init();
-
-	setup_olpc_ofw_pgd();
 
 	ROOT_DEV = old_decode_dev(boot_params.hdr.root_dev);
 	screen_info = boot_params.screen_info;

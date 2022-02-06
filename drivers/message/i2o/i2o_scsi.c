@@ -528,6 +528,7 @@ static int i2o_scsi_queuecommand(struct scsi_cmnd *SCpnt,
 	 *      Do the incoming paperwork
 	 */
 	i2o_dev = SCpnt->device->hostdata;
+	c = i2o_dev->iop;
 
 	SCpnt->scsi_done = done;
 
@@ -537,7 +538,7 @@ static int i2o_scsi_queuecommand(struct scsi_cmnd *SCpnt,
 		done(SCpnt);
 		goto exit;
 	}
-	c = i2o_dev->iop;
+
 	tid = i2o_dev->lct_data.tid;
 
 	osm_debug("qcmd: Tid = %03x\n", tid);

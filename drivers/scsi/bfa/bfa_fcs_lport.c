@@ -135,9 +135,6 @@ bfa_fcs_port_sm_init(struct bfa_fcs_port_s *port, enum bfa_fcs_port_event event)
 		bfa_fcs_port_deleted(port);
 		break;
 
-	case BFA_FCS_PORT_SM_OFFLINE:
-		break;
-
 	default:
 		bfa_sm_fault(port->fcs, event);
 	}

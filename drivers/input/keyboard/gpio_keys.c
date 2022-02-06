@@ -31,7 +31,6 @@ struct gpio_button_data {
 	struct input_dev *input;
 	struct timer_list timer;
 	struct work_struct work;
-	int timer_debounce;	/* in msecs */
 	bool disabled;
 };
 
@@ -39,8 +38,6 @@ struct gpio_keys_drvdata {
 	struct input_dev *input;
 	struct mutex disable_lock;
 	unsigned int n_buttons;
-	int (*enable)(struct device *dev);
-	void (*disable)(struct device *dev);
 	struct gpio_button_data data[0];
 };
 
@@ -112,7 +109,7 @@ static void gpio_keys_disable_button(struct gpio_button_data *bdata)
 		 * Disable IRQ and possible debouncing timer.
 		 */
 		disable_irq(gpio_to_irq(bdata->button->gpio));
-		if (bdata->timer_debounce)
+		if (bdata->button->debounce_interval)
 			del_timer_sync(&bdata->timer);
 
 		bdata->disabled = true;
@@ -350,9 +347,9 @@ static irqreturn_t gpio_keys_isr(int irq, void *dev_id)
 
 	BUG_ON(irq != gpio_to_irq(button->gpio));
 
-	if (bdata->timer_debounce)
+	if (button->debounce_interval)
 		mod_timer(&bdata->timer,
-			jiffies + msecs_to_jiffies(bdata->timer_debounce));
+			jiffies + msecs_to_jiffies(button->debounce_interval));
 	else
 		schedule_work(&bdata->work);
 
@@ -386,14 +383,6 @@ static int __devinit gpio_keys_setup_key(struct platform_device *pdev,
 		goto fail3;
 	}
 
-	if (button->debounce_interval) {
-		error = gpio_set_debounce(button->gpio,
-					  button->debounce_interval * 1000);
-		/* use timer if gpiolib doesn't provide debounce */
-		if (error < 0)
-			bdata->timer_debounce = button->debounce_interval;
-	}
-
 	irq = gpio_to_irq(button->gpio);
 	if (irq < 0) {
 		error = irq;
@@ -425,21 +414,6 @@ fail2:
 	return error;
 }
 
-static int gpio_keys_open(struct input_dev *input)
-{
-	struct gpio_keys_drvdata *ddata = input_get_drvdata(input);
-
-	return ddata->enable ? ddata->enable(input->dev.parent) : 0;
-}
-
-static void gpio_keys_close(struct input_dev *input)
-{
-	struct gpio_keys_drvdata *ddata = input_get_drvdata(input);
-
-	if (ddata->disable)
-		ddata->disable(input->dev.parent);
-}
-
 static int __devinit gpio_keys_probe(struct platform_device *pdev)
 {
 	struct gpio_keys_platform_data *pdata = pdev->dev.platform_data;
@@ -461,18 +435,13 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 
 	ddata->input = input;
 	ddata->n_buttons = pdata->nbuttons;
-	ddata->enable = pdata->enable;
-	ddata->disable = pdata->disable;
 	mutex_init(&ddata->disable_lock);
 
 	platform_set_drvdata(pdev, ddata);
-	input_set_drvdata(input, ddata);
 
 	input->name = pdev->name;
 	input->phys = "gpio-keys/input0";
 	input->dev.parent = &pdev->dev;
-	input->open = gpio_keys_open;
-	input->close = gpio_keys_close;
 
 	input->id.bustype = BUS_HOST;
 	input->id.vendor = 0x0001;
@@ -529,7 +498,7 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
  fail2:
 	while (--i >= 0) {
 		free_irq(gpio_to_irq(pdata->buttons[i].gpio), &ddata->data[i]);
-		if (ddata->data[i].timer_debounce)
+		if (pdata->buttons[i].debounce_interval)
 			del_timer_sync(&ddata->data[i].timer);
 		cancel_work_sync(&ddata->data[i].work);
 		gpio_free(pdata->buttons[i].gpio);
@@ -557,7 +526,7 @@ static int __devexit gpio_keys_remove(struct platform_device *pdev)
 	for (i = 0; i < pdata->nbuttons; i++) {
 		int irq = gpio_to_irq(pdata->buttons[i].gpio);
 		free_irq(irq, &ddata->data[i]);
-		if (ddata->data[i].timer_debounce)
+		if (pdata->buttons[i].debounce_interval)
 			del_timer_sync(&ddata->data[i].timer);
 		cancel_work_sync(&ddata->data[i].work);
 		gpio_free(pdata->buttons[i].gpio);

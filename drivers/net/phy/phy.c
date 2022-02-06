@@ -301,7 +301,7 @@ EXPORT_SYMBOL(phy_ethtool_gset);
 /**
  * phy_mii_ioctl - generic PHY MII ioctl interface
  * @phydev: the phy_device struct
- * @ifr: &struct ifreq for socket ioctl's
+ * @mii_data: MII ioctl data
  * @cmd: ioctl cmd to execute
  *
  * Note that this function is currently incompatible with the
@@ -309,9 +309,8 @@ EXPORT_SYMBOL(phy_ethtool_gset);
  * current state.  Use at own risk.
  */
 int phy_mii_ioctl(struct phy_device *phydev,
-		struct ifreq *ifr, int cmd)
+		struct mii_ioctl_data *mii_data, int cmd)
 {
-	struct mii_ioctl_data *mii_data = if_mii(ifr);
 	u16 val = mii_data->val_in;
 
 	switch (cmd) {
@@ -360,11 +359,6 @@ int phy_mii_ioctl(struct phy_device *phydev,
 			phydev->drv->config_init(phydev);
 		}
 		break;
-
-	case SIOCSHWTSTAMP:
-		if (phydev->drv->hwtstamp)
-			return phydev->drv->hwtstamp(phydev, ifr);
-		/* fall through */
 
 	default:
 		return -EOPNOTSUPP;

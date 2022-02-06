@@ -27,7 +27,6 @@
 #include <linux/smp.h>
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
-#include <linux/memblock.h>
 
 #include <asm/unified.h>
 #include <asm/cpu.h>
@@ -47,9 +46,7 @@
 #include <asm/traps.h>
 #include <asm/unwind.h>
 
-#if defined(CONFIG_DEPRECATED_PARAM_STRUCT)
 #include "compat.h"
-#endif
 #include "atags.h"
 #include "tcm.h"
 
@@ -274,21 +271,6 @@ static void __init cacheid_init(void)
 extern struct proc_info_list *lookup_processor_type(unsigned int);
 extern struct machine_desc *lookup_machine_type(unsigned int);
 
-static void __init feat_v6_fixup(void)
-{
-	int id = read_cpuid_id();
-
-	if ((id & 0xff0f0000) != 0x41070000)
-		return;
-
-	/*
-	 * HWCAP_TLS is available only on 1136 r1p0 and later,
-	 * see also kuser_get_tls_init.
-	 */
-	if ((((id >> 4) & 0xfff) == 0xb36) && (((id >> 20) & 3) == 0))
-		elf_hwcap &= ~HWCAP_TLS;
-}
-
 static void __init setup_processor(void)
 {
 	struct proc_info_list *list;
@@ -330,8 +312,6 @@ static void __init setup_processor(void)
 #ifndef CONFIG_ARM_THUMB
 	elf_hwcap &= ~HWCAP_THUMB;
 #endif
-
-	feat_v6_fixup();
 
 	cacheid_init();
 	cpu_proc_init();
@@ -424,12 +404,13 @@ static int __init arm_add_memory(unsigned long start, unsigned long size)
 	size -= start & ~PAGE_MASK;
 	bank->start = PAGE_ALIGN(start);
 	bank->size  = size & PAGE_MASK;
+	bank->node  = PHYS_TO_NID(start);
 
 	/*
 	 * Check whether this memory region has non-zero size or
 	 * invalid node number.
 	 */
-	if (bank->size == 0)
+	if (bank->size == 0 || bank->node >= MAX_NUMNODES)
 		return -EINVAL;
 
 	meminfo.nr_banks++;
@@ -757,13 +738,6 @@ static int __init setup_elfcorehdr(char *arg)
 early_param("elfcorehdr", setup_elfcorehdr);
 #endif /* CONFIG_CRASH_DUMP */
 
-static void __init squash_mem_tags(struct tag *tag)
-{
-	for (; tag->hdr.size; tag = tag_next(tag))
-		if (tag->hdr.tag == ATAG_MEM)
-			tag->hdr.tag = ATAG_NONE;
-}
-
 void __init setup_arch(char **cmdline_p)
 {
 	struct tag *tags = (struct tag *)&init_tags;
@@ -784,14 +758,12 @@ void __init setup_arch(char **cmdline_p)
 	else if (mdesc->boot_params)
 		tags = phys_to_virt(mdesc->boot_params);
 
-#if defined(CONFIG_DEPRECATED_PARAM_STRUCT)
 	/*
 	 * If we have the old style parameters, convert them to
 	 * a tag list.
 	 */
 	if (tags->hdr.tag != ATAG_CORE)
 		convert_to_tag_list(tags);
-#endif
 	if (tags->hdr.tag != ATAG_CORE)
 		tags = (struct tag *)&init_tags;
 
@@ -819,8 +791,6 @@ void __init setup_arch(char **cmdline_p)
 
 	parse_early_param();
 
-	arm_memblock_init(&meminfo, mdesc);
-
 	paging_init(mdesc);
 	request_standard_resources(&meminfo, mdesc);
 
@@ -835,7 +805,6 @@ void __init setup_arch(char **cmdline_p)
 	/*
 	 * Set up various architecture-specific pointers
 	 */
-	arch_nr_irqs = mdesc->nr_irqs;
 	init_arch_irq = mdesc->init_irq;
 	system_timer = mdesc->timer;
 	init_machine = mdesc->init_machine;

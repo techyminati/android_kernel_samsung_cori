@@ -171,10 +171,10 @@ void intel_enable_asle (struct drm_device *dev)
 		ironlake_enable_display_irq(dev_priv, DE_GSE);
 	else {
 		i915_enable_pipestat(dev_priv, 1,
-				     PIPE_LEGACY_BLC_EVENT_ENABLE);
+				     I915_LEGACY_BLC_EVENT_ENABLE);
 		if (IS_I965G(dev))
 			i915_enable_pipestat(dev_priv, 0,
-					     PIPE_LEGACY_BLC_EVENT_ENABLE);
+					     I915_LEGACY_BLC_EVENT_ENABLE);
 	}
 }
 
@@ -842,6 +842,7 @@ irqreturn_t i915_driver_irq_handler(DRM_IRQ_ARGS)
 	u32 iir, new_iir;
 	u32 pipea_stats, pipeb_stats;
 	u32 vblank_status;
+	u32 vblank_enable;
 	int vblank = 0;
 	unsigned long irqflags;
 	int irq_received;
@@ -855,10 +856,13 @@ irqreturn_t i915_driver_irq_handler(DRM_IRQ_ARGS)
 
 	iir = I915_READ(IIR);
 
-	if (IS_I965G(dev))
-		vblank_status = PIPE_START_VBLANK_INTERRUPT_STATUS;
-	else
-		vblank_status = PIPE_VBLANK_INTERRUPT_STATUS;
+	if (IS_I965G(dev)) {
+		vblank_status = I915_START_VBLANK_INTERRUPT_STATUS;
+		vblank_enable = PIPE_START_VBLANK_INTERRUPT_ENABLE;
+	} else {
+		vblank_status = I915_VBLANK_INTERRUPT_STATUS;
+		vblank_enable = I915_VBLANK_INTERRUPT_ENABLE;
+	}
 
 	for (;;) {
 		irq_received = iir != 0;
@@ -962,8 +966,8 @@ irqreturn_t i915_driver_irq_handler(DRM_IRQ_ARGS)
 				intel_finish_page_flip(dev, 1);
 		}
 
-		if ((pipea_stats & PIPE_LEGACY_BLC_EVENT_STATUS) ||
-		    (pipeb_stats & PIPE_LEGACY_BLC_EVENT_STATUS) ||
+		if ((pipea_stats & I915_LEGACY_BLC_EVENT_STATUS) ||
+		    (pipeb_stats & I915_LEGACY_BLC_EVENT_STATUS) ||
 		    (iir & I915_ASLE_INTERRUPT))
 			opregion_asle_intr(dev);
 
@@ -1229,21 +1233,16 @@ void i915_hangcheck_elapsed(unsigned long data)
 {
 	struct drm_device *dev = (struct drm_device *)data;
 	drm_i915_private_t *dev_priv = dev->dev_private;
-	uint32_t acthd, instdone, instdone1;
+	uint32_t acthd;
 
 	/* No reset support on this chip yet. */
 	if (IS_GEN6(dev))
 		return;
 
-	if (!IS_I965G(dev)) {
+	if (!IS_I965G(dev))
 		acthd = I915_READ(ACTHD);
-		instdone = I915_READ(INSTDONE);
-		instdone1 = 0;
-	} else {
+	else
 		acthd = I915_READ(ACTHD_I965);
-		instdone = I915_READ(INSTDONE_I965);
-		instdone1 = I915_READ(INSTDONE1);
-	}
 
 	/* If all work is done then ACTHD clearly hasn't advanced. */
 	if (list_empty(&dev_priv->render_ring.request_list) ||
@@ -1254,24 +1253,21 @@ void i915_hangcheck_elapsed(unsigned long data)
 		return;
 	}
 
-	if (dev_priv->last_acthd == acthd &&
-	    dev_priv->last_instdone == instdone &&
-	    dev_priv->last_instdone1 == instdone1) {
-		if (dev_priv->hangcheck_count++ > 1) {
-			DRM_ERROR("Hangcheck timer elapsed... GPU hung\n");
-			i915_handle_error(dev, true);
-			return;
-		}
-	} else {
-		dev_priv->hangcheck_count = 0;
-
-		dev_priv->last_acthd = acthd;
-		dev_priv->last_instdone = instdone;
-		dev_priv->last_instdone1 = instdone1;
-	}
+	if (dev_priv->last_acthd == acthd && dev_priv->hangcheck_count > 0) {
+		DRM_ERROR("Hangcheck timer elapsed... GPU hung\n");
+		i915_handle_error(dev, true);
+		return;
+	} 
 
 	/* Reset timer case chip hangs without another request being added */
 	mod_timer(&dev_priv->hangcheck_timer, jiffies + DRM_I915_HANGCHECK_PERIOD);
+
+	if (acthd != dev_priv->last_acthd)
+		dev_priv->hangcheck_count = 0;
+	else
+		dev_priv->hangcheck_count++;
+
+	dev_priv->last_acthd = acthd;
 }
 
 /* drm_dma.h hooks

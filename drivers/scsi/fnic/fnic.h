@@ -21,7 +21,6 @@
 #include <linux/interrupt.h>
 #include <linux/netdevice.h>
 #include <linux/workqueue.h>
-#include <linux/bitops.h>
 #include <scsi/libfc.h>
 #include <scsi/libfcoe.h>
 #include "fnic_io.h"
@@ -50,6 +49,7 @@
 /*
  * Tag bits used for special requests.
  */
+#define BIT(nr)			(1UL << (nr))
 #define FNIC_TAG_ABORT		BIT(30)		/* tag bit indicating abort */
 #define FNIC_TAG_DEV_RST	BIT(29)		/* indicates device reset */
 #define FNIC_TAG_MASK		(BIT(24) - 1)	/* mask for lookup */

@@ -15,7 +15,6 @@
 #include <linux/types.h>
 #include <linux/interrupt.h>
 #include <linux/list.h>
-#include <linux/memblock.h>
 #include <linux/timer.h>
 #include <linux/init.h>
 #include <linux/sysdev.h>
@@ -305,13 +304,6 @@ static void __init h1940_map_io(void)
 	s3c_pm_init();
 }
 
-/* H1940 and RX3715 need to reserve this for suspend */
-static void __init h1940_reserve(void)
-{
-	memblock_reserve(0x30003000, 0x1000);
-	memblock_reserve(0x30081000, 0x1000);
-}
-
 static void __init h1940_init_irq(void)
 {
 	s3c24xx_init_irq();
@@ -354,7 +346,6 @@ MACHINE_START(H1940, "IPAQ-H1940")
 	.io_pg_offst	= (((u32)S3C24XX_VA_UART) >> 18) & 0xfffc,
 	.boot_params	= S3C2410_SDRAM_PA + 0x100,
 	.map_io		= h1940_map_io,
-	.reserve	= h1940_reserve,
 	.init_irq	= h1940_init_irq,
 	.init_machine	= h1940_init,
 	.timer		= &s3c24xx_timer,

@@ -20,7 +20,12 @@
 
 #include <asm/prom.h>
 
-/* These functions provide the necessary setup for the mv64x60 drivers. */
+/*
+ * These functions provide the necessary setup for the mv64x60 drivers.
+ * These drivers are unusual in that they work on both the MIPS and PowerPC
+ * architectures.  Because of that, the drivers do not support the normal
+ * PowerPC of_platform_bus_type.  They support platform_bus_type instead.
+ */
 
 static struct of_device_id __initdata of_mv64x60_devices[] = {
 	{ .compatible = "marvell,mv64306-devctrl", },

@@ -1505,7 +1505,7 @@ cy_ioctl(struct tty_struct *tty, struct file *file,
 	printk("cy_ioctl %s, cmd = %x arg = %lx\n", tty->name, cmd, arg);	/* */
 #endif
 
-	tty_lock();
+	lock_kernel();
 
 	switch (cmd) {
 	case CYGETMON:
@@ -1561,7 +1561,7 @@ cy_ioctl(struct tty_struct *tty, struct file *file,
 	default:
 		ret_val = -ENOIOCTLCMD;
 	}
-	tty_unlock();
+	unlock_kernel();
 
 #ifdef SERIAL_DEBUG_OTHER
 	printk("cy_ioctl done\n");
@@ -1786,9 +1786,7 @@ block_til_ready(struct tty_struct *tty, struct file *filp,
 		       tty->name, info->count);
 		/**/
 #endif
-		tty_unlock();
-		schedule();
-		tty_lock();
+		    schedule();
 	}
 	__set_current_state(TASK_RUNNING);
 	remove_wait_queue(&info->open_wait, &wait);

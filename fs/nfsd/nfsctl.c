@@ -949,12 +949,15 @@ static ssize_t __write_ports_addfd(char *buf)
 	if (err != 0)
 		return err;
 
-	err = svc_addsock(nfsd_serv, fd, buf, SIMPLE_TRANSACTION_LIMIT);
-	if (err < 0) {
-		svc_destroy(nfsd_serv);
-		return err;
-	}
+	err = lockd_up();
+	if (err != 0)
+		goto out;
 
+	err = svc_addsock(nfsd_serv, fd, buf, SIMPLE_TRANSACTION_LIMIT);
+	if (err < 0)
+		lockd_down();
+
+out:
 	/* Decrease the count, but don't shut down the service */
 	nfsd_serv->sv_nrthreads--;
 	return err;
@@ -975,6 +978,9 @@ static ssize_t __write_ports_delfd(char *buf)
 	if (nfsd_serv != NULL)
 		len = svc_sock_names(nfsd_serv, buf,
 					SIMPLE_TRANSACTION_LIMIT, toclose);
+	if (len >= 0)
+		lockd_down();
+
 	kfree(toclose);
 	return len;
 }
@@ -1008,9 +1014,6 @@ static ssize_t __write_ports_addxprt(char *buf)
 				PF_INET6, port, SVC_SOCK_ANONYMOUS);
 	if (err < 0 && err != -EAFNOSUPPORT)
 		goto out_close;
-
-	/* Decrease the count, but don't shut down the service */
-	nfsd_serv->sv_nrthreads--;
 	return 0;
 out_close:
 	xprt = svc_find_xprt(nfsd_serv, transport, PF_INET, port);
@@ -1019,7 +1022,8 @@ out_close:
 		svc_xprt_put(xprt);
 	}
 out_err:
-	svc_destroy(nfsd_serv);
+	/* Decrease the count, but don't shut down the service */
+	nfsd_serv->sv_nrthreads--;
 	return err;
 }
 
@@ -1190,7 +1194,7 @@ static ssize_t write_maxblksize(struct file *file, char *buf, size_t size)
 			bsize = NFSSVC_MAXBLKSIZE;
 		bsize &= ~(1024-1);
 		mutex_lock(&nfsd_mutex);
-		if (nfsd_serv) {
+		if (nfsd_serv && nfsd_serv->sv_nrthreads) {
 			mutex_unlock(&nfsd_mutex);
 			return -EBUSY;
 		}
@@ -1306,8 +1310,6 @@ static ssize_t __write_recoverydir(struct file *file, char *buf, size_t size)
 			return -EINVAL;
 
 		status = nfs4_reset_recoverydir(recdir);
-		if (status)
-			return status;
 	}
 
 	return scnprintf(buf, SIMPLE_TRANSACTION_LIMIT, "%s\n",

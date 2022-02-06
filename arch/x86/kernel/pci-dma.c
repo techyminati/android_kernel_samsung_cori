@@ -13,7 +13,6 @@
 #include <asm/calgary.h>
 #include <asm/amd_iommu.h>
 #include <asm/x86_init.h>
-#include <asm/xen/swiotlb-xen.h>
 
 static int forbid_dac __read_mostly;
 
@@ -133,7 +132,7 @@ void __init pci_iommu_alloc(void)
 	/* free the range so iommu could get some range less than 4G */
 	dma32_free_bootmem();
 
-	if (pci_xen_swiotlb_detect() || pci_swiotlb_detect())
+	if (pci_swiotlb_detect())
 		goto out;
 
 	gart_iommu_hole_init();
@@ -145,8 +144,6 @@ void __init pci_iommu_alloc(void)
 	/* needs to be called after gart_iommu_hole_init */
 	amd_iommu_detect();
 out:
-	pci_xen_swiotlb_init();
-
 	pci_swiotlb_init();
 }
 
@@ -299,7 +296,7 @@ static int __init pci_iommu_init(void)
 #endif
 	x86_init.iommu.iommu_init();
 
-	if (swiotlb || xen_swiotlb) {
+	if (swiotlb) {
 		printk(KERN_INFO "PCI-DMA: "
 		       "Using software bounce buffering for IO (SWIOTLB)\n");
 		swiotlb_print_info();

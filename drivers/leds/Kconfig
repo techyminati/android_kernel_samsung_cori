@@ -254,6 +254,14 @@ config LEDS_REGULATOR
 	help
 	  This option enables support for regulator driven LEDs.
 
+config LEDS_BCM59035
+       tristate "LED support for Broadcom BCM59035 PMU"
+       depends on LEDS_CLASS && HAVE_PWM
+       help
+         This option enables support for control of LEDs connected to
+         BCM59035 PMU. The LED pattern and pattern-repetition period
+         is set through sysfs.
+
 config LEDS_BD2802
 	tristate "LED driver for BD2802 RGB LED"
 	depends on I2C
@@ -301,15 +309,6 @@ config LEDS_MC13783
 	help
 	  This option enable support for on-chip LED drivers found
 	  on Freescale Semiconductor MC13783 PMIC.
-
-config LEDS_NS2
-	tristate "LED support for Network Space v2 GPIO LEDs"
-	depends on MACH_NETSPACE_V2 || MACH_INETSPACE_V2 || MACH_NETSPACE_MAX_V2
-	default y
-	help
-	  This option enable support for the dual-GPIO LED found on the
-	  Network Space v2 board (and parents). This include Internet Space v2,
-	  Network Space (Max) v2 and d2 Network v2 boards.
 
 config LEDS_TRIGGERS
 	bool "LED Trigger support"
@@ -372,6 +371,12 @@ config LEDS_TRIGGER_DEFAULT_ON
 	help
 	  This allows LEDs to be initialised in the ON state.
 	  If unsure, say Y.
+
+config LEDS_TRIGGER_SLEEP
+	tristate "LED Sleep Mode Trigger"
+	depends on LEDS_TRIGGERS && HAS_EARLYSUSPEND
+	help
+	  This turns LEDs on when the screen is off but the cpu still running.
 
 comment "iptables trigger is under Netfilter config (LED target)"
 	depends on LEDS_TRIGGERS

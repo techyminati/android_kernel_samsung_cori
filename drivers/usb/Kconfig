@@ -45,8 +45,7 @@ config USB_ARCH_HAS_OHCI
 	default y if STB03xxx
 	default y if PPC_MPC52xx
 	# MIPS:
-	default y if MIPS_ALCHEMY
-	default y if MACH_JZ4740
+	default y if SOC_AU1X00
 	# SH:
 	default y if CPU_SUBTYPE_SH7720
 	default y if CPU_SUBTYPE_SH7721
@@ -158,7 +157,7 @@ source "drivers/usb/misc/Kconfig"
 
 source "drivers/usb/atm/Kconfig"
 
-source "drivers/usb/gadget/Kconfig"
+source "drivers/usb/gadget_brcm/Kconfig"
 
 source "drivers/usb/otg/Kconfig"
 

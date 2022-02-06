@@ -28,6 +28,7 @@
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>
+#include <plat/mux.h>
 #include <plat/usb.h>
 
 #ifdef CONFIG_USB_MUSB_SOC

@@ -954,13 +954,12 @@ ioc3_change_speed(struct uart_port *the_port,
 		  struct ktermios *new_termios, struct ktermios *old_termios)
 {
 	struct ioc3_port *port = get_ioc3_port(the_port);
-	unsigned int cflag, iflag;
+	unsigned int cflag;
 	int baud;
 	int new_parity = 0, new_parity_enable = 0, new_stop = 0, new_data = 8;
 	struct uart_state *state = the_port->state;
 
 	cflag = new_termios->c_cflag;
-	iflag = new_termios->c_iflag;
 
 	switch (cflag & CSIZE) {
 	case CS5:
@@ -1001,12 +1000,12 @@ ioc3_change_speed(struct uart_port *the_port,
 
 	state->port.tty->low_latency = 1;
 
-	if (iflag & IGNPAR)
+	if (I_IGNPAR(state->port.tty))
 		the_port->ignore_status_mask &= ~(N_PARITY_ERROR
 						  | N_FRAMING_ERROR);
-	if (iflag & IGNBRK) {
+	if (I_IGNBRK(state->port.tty)) {
 		the_port->ignore_status_mask &= ~N_BREAK;
-		if (iflag & IGNPAR)
+		if (I_IGNPAR(state->port.tty))
 			the_port->ignore_status_mask &= ~N_OVERRUN_ERROR;
 	}
 	if (!(cflag & CREAD)) {

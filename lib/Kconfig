@@ -7,9 +7,6 @@ config BINARY_PRINTF
 
 menu "Library routines"
 
-config RAID6_PQ
-	tristate
-
 config BITREVERSE
 	tristate
 

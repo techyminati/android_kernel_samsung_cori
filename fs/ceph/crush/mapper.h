@@ -1,5 +1,5 @@
-#ifndef CEPH_CRUSH_MAPPER_H
-#define CEPH_CRUSH_MAPPER_H
+#ifndef _CRUSH_MAPPER_H
+#define _CRUSH_MAPPER_H
 
 /*
  * CRUSH functions for find rules and then mapping an input to an

@@ -20,7 +20,7 @@ static u32 supported_protocols[] = {
 	CEPH_AUTH_CEPHX
 };
 
-static int ceph_auth_init_protocol(struct ceph_auth_client *ac, int protocol)
+int ceph_auth_init_protocol(struct ceph_auth_client *ac, int protocol)
 {
 	switch (protocol) {
 	case CEPH_AUTH_NONE:
@@ -133,8 +133,8 @@ bad:
 	return -ERANGE;
 }
 
-static int ceph_build_auth_request(struct ceph_auth_client *ac,
-				   void *msg_buf, size_t msg_len)
+int ceph_build_auth_request(struct ceph_auth_client *ac,
+			   void *msg_buf, size_t msg_len)
 {
 	struct ceph_mon_request_header *monhdr = msg_buf;
 	void *p = monhdr + 1;

@@ -670,8 +670,7 @@ static __devinit int wm8974_register(struct wm8974_priv *wm8974)
 
 	if (wm8974_codec) {
 		dev_err(codec->dev, "Another WM8974 is registered\n");
-		ret = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
 	mutex_init(&codec->mutex);

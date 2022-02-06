@@ -10,8 +10,7 @@
 #ifndef ASM_ARCH_IRQS_H
 #define ASM_ARCH_IRQS_H
 
-#include <mach/irqs-db5500.h>
-#include <mach/irqs-db8500.h>
+#include <mach/hardware.h>
 
 #define IRQ_LOCALTIMER                  29
 #define IRQ_LOCALWDOG                   30
@@ -68,21 +67,12 @@
 /* There are 128 shared peripheral interrupts assigned to
  * INTID[160:32]. The first 32 interrupts are reserved.
  */
-#define DBX500_NR_INTERNAL_IRQS		161
+#define U8500_SOC_NR_IRQS		161
 
 /* After chip-specific IRQ numbers we have the GPIO ones */
 #define NOMADIK_NR_GPIO			288
-#define NOMADIK_GPIO_TO_IRQ(gpio)	((gpio) + DBX500_NR_INTERNAL_IRQS)
-#define NOMADIK_IRQ_TO_GPIO(irq)	((irq) - DBX500_NR_INTERNAL_IRQS)
-#define IRQ_BOARD_START			NOMADIK_GPIO_TO_IRQ(NOMADIK_NR_GPIO)
+#define NOMADIK_GPIO_TO_IRQ(gpio)	((gpio) + U8500_SOC_NR_IRQS)
+#define NOMADIK_IRQ_TO_GPIO(irq)	((irq) - U8500_SOC_NR_IRQS)
+#define NR_IRQS				NOMADIK_GPIO_TO_IRQ(NOMADIK_NR_GPIO)
 
-/* This will be overridden by board-specific irq headers */
-#define IRQ_BOARD_END			IRQ_BOARD_START
-
-#ifdef CONFIG_MACH_U8500_MOP
-#include <mach/irqs-board-mop500.h>
-#endif
-
-#define NR_IRQS				IRQ_BOARD_END
-
-#endif /* ASM_ARCH_IRQS_H */
+#endif /*ASM_ARCH_IRQS_H*/

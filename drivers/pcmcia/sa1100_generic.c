@@ -35,6 +35,7 @@
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/ss.h>
 

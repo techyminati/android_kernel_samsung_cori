@@ -43,7 +43,6 @@ enum {
 	WACOM_G4,
 	PTU,
 	PL,
-	DTU,
 	INTUOS,
 	INTUOS3S,
 	INTUOS3,

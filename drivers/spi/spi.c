@@ -26,7 +26,6 @@
 #include <linux/slab.h>
 #include <linux/mod_devicetable.h>
 #include <linux/spi/spi.h>
-#include <linux/of_spi.h>
 
 
 /* SPI bustype and spi_master class are registered after board init code
@@ -541,9 +540,6 @@ int spi_register_master(struct spi_master *master)
 	/* populate children from any spi device tables */
 	scan_boardinfo(master);
 	status = 0;
-
-	/* Register devices from the device tree */
-	of_register_spi_devices(master);
 done:
 	return status;
 }

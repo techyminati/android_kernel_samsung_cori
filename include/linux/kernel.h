@@ -124,6 +124,12 @@ extern int console_printk[];
 #define minimum_console_loglevel (console_printk[2])
 #define default_console_loglevel (console_printk[3])
 
+extern int brcm_console_brcm_printk[];
+#define brcm_console_loglevel (brcm_console_brcm_printk[0])
+#define default_brcm_message_loglevel (brcm_console_brcm_printk[1])
+#define minimum_brcm_console_loglevel (brcm_console_brcm_printk[2])
+#define default_brcm_console_loglevel (brcm_console_brcm_printk[3])
+
 struct completion;
 struct pt_regs;
 struct user;
@@ -171,18 +177,12 @@ static inline void might_fault(void)
 }
 #endif
 
-struct va_format {
-	const char *fmt;
-	va_list *va;
-};
-
 extern struct atomic_notifier_head panic_notifier_list;
-extern long (*panic_blink)(int state);
+extern long (*panic_blink)(long time);
 NORET_TYPE void panic(const char * fmt, ...)
 	__attribute__ ((NORET_AND format (printf, 1, 2))) __cold;
 extern void oops_enter(void);
 extern void oops_exit(void);
-void print_oops_end_marker(void);
 extern int oops_may_print(void);
 NORET_TYPE void do_exit(long error_code)
 	ATTRIB_NORET;
@@ -253,13 +253,6 @@ extern struct pid *session_of_pgrp(struct pid *pgrp);
 #define FW_WARN		"[Firmware Warn]: "
 #define FW_INFO		"[Firmware Info]: "
 
-/*
- * HW_ERR
- * Add this to a message for hardware errors, so that user can report
- * it to hardware vendor instead of LKML or software vendor.
- */
-#define HW_ERR		"[Hardware Error]: "
-
 #ifdef CONFIG_PRINTK
 asmlinkage int vprintk(const char *fmt, va_list args)
 	__attribute__ ((format (printf, 1, 0)));
@@ -270,6 +263,15 @@ extern int __printk_ratelimit(const char *func);
 #define printk_ratelimit() __printk_ratelimit(__func__)
 extern bool printk_timed_ratelimit(unsigned long *caller_jiffies,
 				   unsigned int interval_msec);
+
+/* brcm printk */
+asmlinkage int brcm_vprintk(const char *fmt, va_list args)
+       __attribute__ ((format (printf, 1, 0)));
+asmlinkage int brcm_printk(const char * fmt, ...)
+       __attribute__ ((format (printf, 1, 2))) __cold;
+
+extern int brcm_klogging(char *data, int length);
+extern void brcm_current_netcon_status(unsigned char status);
 
 extern int printk_delay_msec;
 
@@ -297,6 +299,15 @@ static inline int printk_ratelimit(void) { return 0; }
 static inline bool printk_timed_ratelimit(unsigned long *caller_jiffies, \
 					  unsigned int interval_msec)	\
 		{ return false; }
+/* brcm printk */
+static inline int brcm_vprintk(const char *s, va_list args)
+       __attribute__ ((format (printf, 1, 0)));
+static inline int brcm_vprintk(const char *s, va_list args) { return 0; }
+static inline int brcm_printk(const char *s, ...)
+       __attribute__ ((format (printf, 1, 2)));
+static inline int __cold brcm_printk(const char *s, ...) { return 0; }
+static inline int brcm_klogging(char *data, int length){ return 0;}
+static inline void brcm_current_netcon_status(unsigned char status) {};
 
 /* No effect, but we still get type checking even in the !PRINTK case: */
 #define printk_once(x...) printk(x)
@@ -305,13 +316,6 @@ static inline void log_buf_kexec_setup(void)
 {
 }
 #endif
-
-/*
- * Dummy printk for disabled debugging statements to use whilst maintaining
- * gcc's format and side-effect checking.
- */
-static inline __attribute__ ((format (printf, 1, 2)))
-int no_printk(const char *s, ...) { return 0; }
 
 extern int printk_needs_cpu(int cpu);
 extern void printk_tick(void);
@@ -528,6 +532,9 @@ extern void tracing_start(void);
 extern void tracing_stop(void);
 extern void ftrace_off_permanent(void);
 
+extern void
+ftrace_special(unsigned long arg1, unsigned long arg2, unsigned long arg3);
+
 static inline void __attribute__ ((format (printf, 1, 2)))
 ____trace_printk_check_format(const char *fmt, ...)
 {
@@ -603,6 +610,8 @@ __ftrace_vprintk(unsigned long ip, const char *fmt, va_list ap);
 
 extern void ftrace_dump(enum ftrace_dump_mode oops_dump_mode);
 #else
+static inline void
+ftrace_special(unsigned long arg1, unsigned long arg2, unsigned long arg3) { }
 static inline int
 trace_printk(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 
@@ -622,6 +631,17 @@ ftrace_vprintk(const char *fmt, va_list ap)
 }
 static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 #endif /* CONFIG_TRACING */
+
+/*
+ *      Display an IP address in readable format.
+ */
+
+#define NIPQUAD(addr) \
+	((unsigned char *)&addr)[0], \
+	((unsigned char *)&addr)[1], \
+	((unsigned char *)&addr)[2], \
+	((unsigned char *)&addr)[3]
+#define NIPQUAD_FMT "%u.%u.%u.%u"
 
 /*
  * min()/max()/clamp() macros that also do
@@ -731,6 +751,12 @@ struct sysinfo;
 extern int do_sysinfo(struct sysinfo *info);
 
 #endif /* __KERNEL__ */
+
+#ifndef __EXPORTED_HEADERS__
+#ifndef __KERNEL__
+#warning Attempt to use kernel headers from user space, see http:/* kernelnewbies.org/KernelHeaders */
+#endif /* __KERNEL__ */
+#endif /* __EXPORTED_HEADERS__ */
 
 #define SI_LOAD_SHIFT	16
 struct sysinfo {

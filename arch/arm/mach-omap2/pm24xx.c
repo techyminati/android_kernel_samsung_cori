@@ -39,6 +39,7 @@
 #include <plat/clock.h>
 #include <plat/sram.h>
 #include <plat/control.h>
+#include <plat/mux.h>
 #include <plat/dma.h>
 #include <plat/board.h>
 

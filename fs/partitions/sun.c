@@ -116,7 +116,7 @@ int sun_partition(struct parsed_partitions *state)
 		}
 		slot++;
 	}
-	strlcat(state->pp_buf, "\n", PAGE_SIZE);
+	printk("\n");
 	put_dev_sector(sect);
 	return 1;
 }

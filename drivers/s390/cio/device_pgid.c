@@ -208,7 +208,6 @@ static void spid_start(struct ccw_device *cdev)
 	req->timeout	= PGID_TIMEOUT;
 	req->maxretries	= PGID_RETRIES;
 	req->lpm	= 0x80;
-	req->singlepath	= 1;
 	req->callback	= spid_callback;
 	spid_do(cdev);
 }
@@ -421,7 +420,6 @@ static void verify_start(struct ccw_device *cdev)
 	req->timeout	= PGID_TIMEOUT;
 	req->maxretries	= PGID_RETRIES;
 	req->lpm	= 0x80;
-	req->singlepath	= 1;
 	if (cdev->private->flags.pgroup) {
 		CIO_TRACE_EVENT(4, "snid");
 		CIO_HEX_EVENT(4, devid, sizeof(*devid));
@@ -509,7 +507,6 @@ void ccw_device_disband_start(struct ccw_device *cdev)
 	req->timeout	= PGID_TIMEOUT;
 	req->maxretries	= PGID_RETRIES;
 	req->lpm	= sch->schib.pmcw.pam & sch->opm;
-	req->singlepath	= 1;
 	req->callback	= disband_callback;
 	fn = SPID_FUNC_DISBAND;
 	if (cdev->private->flags.mpath)

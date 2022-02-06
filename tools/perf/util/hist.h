@@ -56,16 +56,6 @@ struct events_stats {
 	u32 nr_unknown_events;
 };
 
-enum hist_column {
-	HISTC_SYMBOL,
-	HISTC_DSO,
-	HISTC_THREAD,
-	HISTC_COMM,
-	HISTC_PARENT,
-	HISTC_CPU,
-	HISTC_NR_COLS, /* Last entry */
-};
-
 struct hists {
 	struct rb_node		rb_node;
 	struct rb_root		entries;
@@ -74,7 +64,7 @@ struct hists {
 	u64			config;
 	u64			event_stream;
 	u32			type;
-	u16			col_len[HISTC_NR_COLS];
+	u32			max_sym_namelen;
 };
 
 struct hist_entry *__hists__add_entry(struct hists *self,
@@ -82,13 +72,12 @@ struct hist_entry *__hists__add_entry(struct hists *self,
 				      struct symbol *parent, u64 period);
 extern int64_t hist_entry__cmp(struct hist_entry *, struct hist_entry *);
 extern int64_t hist_entry__collapse(struct hist_entry *, struct hist_entry *);
-int hist_entry__fprintf(struct hist_entry *self, struct hists *hists,
-			struct hists *pair_hists, bool show_displacement,
-			long displacement, FILE *fp, u64 total);
+int hist_entry__fprintf(struct hist_entry *self, struct hists *pair_hists,
+			bool show_displacement, long displacement, FILE *fp,
+			u64 total);
 int hist_entry__snprintf(struct hist_entry *self, char *bf, size_t size,
-			 struct hists *hists, struct hists *pair_hists,
-			 bool show_displacement, long displacement,
-			 bool color, u64 total);
+			 struct hists *pair_hists, bool show_displacement,
+			 long displacement, bool color, u64 total);
 void hist_entry__free(struct hist_entry *);
 
 void hists__output_resort(struct hists *self);
@@ -101,15 +90,10 @@ size_t hists__fprintf(struct hists *self, struct hists *pair,
 		      bool show_displacement, FILE *fp);
 
 int hist_entry__inc_addr_samples(struct hist_entry *self, u64 ip);
-int hist_entry__annotate(struct hist_entry *self, struct list_head *head,
-			 size_t privsize);
+int hist_entry__annotate(struct hist_entry *self, struct list_head *head);
 
 void hists__filter_by_dso(struct hists *self, const struct dso *dso);
 void hists__filter_by_thread(struct hists *self, const struct thread *thread);
-
-u16 hists__col_len(struct hists *self, enum hist_column col);
-void hists__set_col_len(struct hists *self, enum hist_column col, u16 len);
-bool hists__new_col_len(struct hists *self, enum hist_column col, u16 len);
 
 #ifdef NO_NEWT_SUPPORT
 static inline int hists__browse(struct hists *self __used,
@@ -142,7 +126,4 @@ int hist_entry__tui_annotate(struct hist_entry *self);
 
 int hists__tui_browse_tree(struct rb_root *self, const char *help);
 #endif
-
-unsigned int hists__sort_list_width(struct hists *self);
-
 #endif	/* __PERF_HIST_H */

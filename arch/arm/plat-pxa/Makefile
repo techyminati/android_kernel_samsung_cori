@@ -4,6 +4,7 @@
 
 obj-y	:= dma.o
 
+obj-$(CONFIG_ARCH_PXA)		+= pmu.o
 obj-$(CONFIG_GENERIC_GPIO)	+= gpio.o
 obj-$(CONFIG_PXA3xx)		+= mfp.o
 obj-$(CONFIG_ARCH_MMP)		+= mfp.o

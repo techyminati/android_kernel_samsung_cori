@@ -778,9 +778,9 @@ int medusa_set_saturation(struct cx25821_dev *dev, int saturation, int decoder)
 
 int medusa_video_init(struct cx25821_dev *dev)
 {
-       u32 value = 0, tmp = 0;
-       int ret_val = 0;
-       int i = 0;
+	u32 value, tmp = 0;
+	int ret_val;
+	int i;
 
 	mutex_lock(&dev->lock);
 
@@ -790,7 +790,6 @@ int medusa_video_init(struct cx25821_dev *dev)
 	value = cx25821_i2c_read(&dev->i2c_bus[0], MON_A_CTRL, &tmp);
 	value &= 0xFFFFF0FF;
 	ret_val = cx25821_i2c_write(&dev->i2c_bus[0], MON_A_CTRL, value);
-
 	if (ret_val < 0)
 		goto error;
 
@@ -798,7 +797,6 @@ int medusa_video_init(struct cx25821_dev *dev)
 	value = cx25821_i2c_read(&dev->i2c_bus[0], MON_A_CTRL, &tmp);
 	value &= 0xFFFFFFDF;
 	ret_val = cx25821_i2c_write(&dev->i2c_bus[0], MON_A_CTRL, value);
-
 	if (ret_val < 0)
 		goto error;
 
@@ -814,7 +812,6 @@ int medusa_video_init(struct cx25821_dev *dev)
 	value &= 0xFF70FF70;
 	value |= 0x00090008;	/* set en_active */
 	ret_val = cx25821_i2c_write(&dev->i2c_bus[0], DENC_AB_CTRL, value);
-
 	if (ret_val < 0)
 		goto error;
 
@@ -829,10 +826,8 @@ int medusa_video_init(struct cx25821_dev *dev)
 	/* select AFE clock to output mode */
 	value = cx25821_i2c_read(&dev->i2c_bus[0], AFE_AB_DIAG_CTRL, &tmp);
 	value &= 0x83FFFFFF;
-       ret_val =
-	   cx25821_i2c_write(&dev->i2c_bus[0], AFE_AB_DIAG_CTRL,
-			     value | 0x10000000);
-
+	ret_val = cx25821_i2c_write(&dev->i2c_bus[0], AFE_AB_DIAG_CTRL,
+				    value | 0x10000000);
 	if (ret_val < 0)
 		goto error;
 
@@ -854,15 +849,12 @@ int medusa_video_init(struct cx25821_dev *dev)
 
 	value |= 7;
 	ret_val = cx25821_i2c_write(&dev->i2c_bus[0], PIN_OE_CTRL, value);
-
 	if (ret_val < 0)
 		goto error;
-
 
 	mutex_unlock(&dev->lock);
 
 	ret_val = medusa_set_videostandard(dev);
-
 	return ret_val;
 
 error:

@@ -34,6 +34,7 @@
 #include <linux/sunrpc/cache.h>
 #include <linux/sunrpc/stats.h>
 #include <linux/sunrpc/rpc_pipe_fs.h>
+#include <linux/smp_lock.h>
 
 #define	 RPCDBG_FACILITY RPCDBG_CACHE
 
@@ -319,7 +320,7 @@ static struct cache_detail *current_detail;
 static int current_index;
 
 static void do_cache_clean(struct work_struct *work);
-static struct delayed_work cache_cleaner;
+static DECLARE_DELAYED_WORK(cache_cleaner, do_cache_clean);
 
 static void sunrpc_init_cache_detail(struct cache_detail *cd)
 {
@@ -1502,11 +1503,6 @@ static int create_cache_proc_entries(struct cache_detail *cd)
 	return 0;
 }
 #endif
-
-void __init cache_initialize(void)
-{
-	INIT_DELAYED_WORK_DEFERRABLE(&cache_cleaner, do_cache_clean);
-}
 
 int cache_register(struct cache_detail *cd)
 {

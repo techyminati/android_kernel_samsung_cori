@@ -584,22 +584,8 @@ acpi_ds_terminate_control_method(union acpi_operand_object *method_desc,
 		 * want make the objects permanent.
 		 */
 		if (!(method_desc->method.flags & AOPOBJ_MODULE_LEVEL)) {
-
-			/* Delete any direct children of (created by) this method */
-
-			acpi_ns_delete_namespace_subtree(walk_state->
-							 method_node);
-
-			/*
-			 * Delete any objects that were created by this method
-			 * elsewhere in the namespace (if any were created).
-			 */
-			if (method_desc->method.
-			    flags & AOPOBJ_MODIFIED_NAMESPACE) {
-				acpi_ns_delete_namespace_by_owner(method_desc->
-								  method.
-								  owner_id);
-			}
+			acpi_ns_delete_namespace_by_owner(method_desc->method.
+							  owner_id);
 		}
 	}
 
@@ -619,7 +605,7 @@ acpi_ds_terminate_control_method(union acpi_operand_object *method_desc,
 		 * we immediately reuse it for the next thread executing this method
 		 */
 		ACPI_DEBUG_PRINT((ACPI_DB_DISPATCH,
-				  "*** Completed execution of one thread, %u threads remaining\n",
+				  "*** Completed execution of one thread, %d threads remaining\n",
 				  method_desc->method.thread_count));
 	} else {
 		/* This is the only executing thread for this method */

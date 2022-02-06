@@ -194,7 +194,7 @@ static int __init hvc_console_setup(struct console *co, char *options)
 	return 0;
 }
 
-static struct console hvc_console = {
+static struct console hvc_con_driver = {
 	.name		= "hvc",
 	.write		= hvc_console_print,
 	.device		= hvc_console_device,
@@ -220,7 +220,7 @@ static struct console hvc_console = {
  */
 static int __init hvc_console_init(void)
 {
-	register_console(&hvc_console);
+	register_console(&hvc_con_driver);
 	return 0;
 }
 console_initcall(hvc_console_init);
@@ -276,8 +276,8 @@ int hvc_instantiate(uint32_t vtermno, int index, const struct hv_ops *ops)
 	 * now (setup won't fail at this point).  It's ok to just
 	 * call register again if previously .setup failed.
 	 */
-	if (index == hvc_console.index)
-		register_console(&hvc_console);
+	if (index == hvc_con_driver.index)
+		register_console(&hvc_con_driver);
 
 	return 0;
 }
@@ -641,7 +641,7 @@ int hvc_poll(struct hvc_struct *hp)
 		}
 		for (i = 0; i < n; ++i) {
 #ifdef CONFIG_MAGIC_SYSRQ
-			if (hp->index == hvc_console.index) {
+			if (hp->index == hvc_con_driver.index) {
 				/* Handle the SysRq Hack */
 				/* XXX should support a sequence */
 				if (buf[i] == '\x0f') {	/* ^O */
@@ -909,7 +909,7 @@ static void __exit hvc_exit(void)
 		tty_unregister_driver(hvc_driver);
 		/* return tty_struct instances allocated in hvc_init(). */
 		put_tty_driver(hvc_driver);
-		unregister_console(&hvc_console);
+		unregister_console(&hvc_con_driver);
 	}
 }
 module_exit(hvc_exit);

@@ -311,24 +311,6 @@ static void __init prom_print_hex(unsigned long val)
 	call_prom("write", 3, 1, _prom->stdout, buf, nibbles);
 }
 
-/* max number of decimal digits in an unsigned long */
-#define UL_DIGITS 21
-static void __init prom_print_dec(unsigned long val)
-{
-	int i, size;
-	char buf[UL_DIGITS+1];
-	struct prom_t *_prom = &RELOC(prom);
-
-	for (i = UL_DIGITS-1; i >= 0;  i--) {
-		buf[i] = (val % 10) + '0';
-		val = val/10;
-		if (val == 0)
-			break;
-	}
-	/* shift stuff down */
-	size = UL_DIGITS - i;
-	call_prom("write", 3, 1, _prom->stdout, buf+i, size);
-}
 
 static void __init prom_printf(const char *format, ...)
 {
@@ -367,14 +349,6 @@ static void __init prom_printf(const char *format, ...)
 			++q;
 			v = va_arg(args, unsigned long);
 			prom_print_hex(v);
-			break;
-		case 'l':
-			++q;
-			if (*q == 'u') { /* '%lu' */
-				++q;
-				v = va_arg(args, unsigned long);
-				prom_print_dec(v);
-			}
 			break;
 		}
 	}
@@ -861,11 +835,11 @@ static int __init prom_count_smt_threads(void)
 		if (plen == PROM_ERROR)
 			break;
 		plen >>= 2;
-		prom_debug("Found %lu smt threads per core\n", (unsigned long)plen);
+		prom_debug("Found 0x%x smt threads per core\n", (unsigned long)plen);
 
 		/* Sanity check */
 		if (plen < 1 || plen > 64) {
-			prom_printf("Threads per core %lu out of bounds, assuming 1\n",
+			prom_printf("Threads per core 0x%x out of bounds, assuming 1\n",
 				    (unsigned long)plen);
 			return 1;
 		}
@@ -895,12 +869,12 @@ static void __init prom_send_capabilities(void)
 		cores = (u32 *)PTRRELOC(&ibm_architecture_vec[IBM_ARCH_VEC_NRCORES_OFFSET]);
 		if (*cores != NR_CPUS) {
 			prom_printf("WARNING ! "
-				    "ibm_architecture_vec structure inconsistent: %lu!\n",
+				    "ibm_architecture_vec structure inconsistent: 0x%x !\n",
 				    *cores);
 		} else {
 			*cores = DIV_ROUND_UP(NR_CPUS, prom_count_smt_threads());
-			prom_printf("Max number of cores passed to firmware: %lu (NR_CPUS = %lu)\n",
-				    *cores, NR_CPUS);
+			prom_printf("Max number of cores passed to firmware: 0x%x\n",
+				    (unsigned long)*cores);
 		}
 
 		/* try calling the ibm,client-architecture-support method */
@@ -1508,7 +1482,7 @@ static void __init prom_hold_cpus(void)
 		reg = -1;
 		prom_getprop(node, "reg", &reg, sizeof(reg));
 
-		prom_debug("cpu hw idx   = %lu\n", reg);
+		prom_debug("cpu hw idx   = 0x%x\n", reg);
 
 		/* Init the acknowledge var which will be reset by
 		 * the secondary cpu when it awakens from its OF
@@ -1518,7 +1492,7 @@ static void __init prom_hold_cpus(void)
 
 		if (reg != _prom->cpu) {
 			/* Primary Thread of non-boot cpu */
-			prom_printf("starting cpu hw idx %lu... ", reg);
+			prom_printf("starting cpu hw idx %x... ", reg);
 			call_prom("start-cpu", 3, 0, node,
 				  secondary_hold, reg);
 
@@ -1533,7 +1507,7 @@ static void __init prom_hold_cpus(void)
 		}
 #ifdef CONFIG_SMP
 		else
-			prom_printf("boot cpu hw idx %lu\n", reg);
+			prom_printf("boot cpu hw idx %x\n", reg);
 #endif /* CONFIG_SMP */
 	}
 
@@ -2446,7 +2420,7 @@ static void __init prom_find_boot_cpu(void)
 	prom_getprop(cpu_pkg, "reg", &getprop_rval, sizeof(getprop_rval));
 	_prom->cpu = getprop_rval;
 
-	prom_debug("Booting CPU hw index = %lu\n", _prom->cpu);
+	prom_debug("Booting CPU hw index = 0x%x\n", _prom->cpu);
 }
 
 static void __init prom_check_initrd(unsigned long r3, unsigned long r4)

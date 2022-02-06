@@ -23,18 +23,25 @@
 #include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
+#include "xfs_dir2.h"
 #include "xfs_alloc.h"
+#include "xfs_dmapi.h"
 #include "xfs_quota.h"
 #include "xfs_mount.h"
 #include "xfs_bmap_btree.h"
+#include "xfs_alloc_btree.h"
 #include "xfs_ialloc_btree.h"
+#include "xfs_dir2_sf.h"
+#include "xfs_attr_sf.h"
 #include "xfs_dinode.h"
 #include "xfs_inode.h"
+#include "xfs_btree.h"
 #include "xfs_ialloc.h"
 #include "xfs_itable.h"
 #include "xfs_rtalloc.h"
 #include "xfs_error.h"
 #include "xfs_bmap.h"
+#include "xfs_rw.h"
 #include "xfs_attr.h"
 #include "xfs_buf_item.h"
 #include "xfs_trans_space.h"
@@ -1490,7 +1497,7 @@ xfs_qm_dqiterate(
 				  maxlblkcnt - lblkno,
 				  XFS_BMAPI_METADATA,
 				  NULL,
-				  0, map, &nmaps, NULL);
+				  0, map, &nmaps, NULL, NULL);
 		xfs_iunlock(qip, XFS_ILOCK_SHARED);
 		if (error)
 			break;
@@ -1662,8 +1669,7 @@ xfs_qm_dqusage_adjust(
 	 * making us disable quotas for the file system.
 	 */
 	if ((error = xfs_qm_dqget_noattach(ip, &udqp, &gdqp))) {
-		xfs_iunlock(ip, XFS_ILOCK_EXCL);
-		IRELE(ip);
+		xfs_iput(ip, XFS_ILOCK_EXCL);
 		*res = BULKSTAT_RV_GIVEUP;
 		return error;
 	}
@@ -1676,8 +1682,7 @@ xfs_qm_dqusage_adjust(
 		 * Walk thru the extent list and count the realtime blocks.
 		 */
 		if ((error = xfs_qm_get_rtblks(ip, &rtblks))) {
-			xfs_iunlock(ip, XFS_ILOCK_EXCL);
-			IRELE(ip);
+			xfs_iput(ip, XFS_ILOCK_EXCL);
 			if (udqp)
 				xfs_qm_dqput(udqp);
 			if (gdqp)

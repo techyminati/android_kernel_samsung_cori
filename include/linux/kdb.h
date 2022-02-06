@@ -114,8 +114,4 @@ enum {
 	KDB_INIT_EARLY,
 	KDB_INIT_FULL,
 };
-
-extern int kdbgetintenv(const char *, int *);
-extern int kdb_set(int, const char **);
-
 #endif	/* !_KDB_H */

@@ -598,18 +598,18 @@ static ssize_t n_hdlc_tty_read(struct tty_struct *tty, struct file *file,
 		return -EFAULT;
 	}
 
-	tty_lock();
+	lock_kernel();
 
 	for (;;) {
 		if (test_bit(TTY_OTHER_CLOSED, &tty->flags)) {
-			tty_unlock();
+			unlock_kernel();
 			return -EIO;
 		}
 
 		n_hdlc = tty2n_hdlc (tty);
 		if (!n_hdlc || n_hdlc->magic != HDLC_MAGIC ||
 			 tty != n_hdlc->tty) {
-			tty_unlock();
+			unlock_kernel();
 			return 0;
 		}
 
@@ -619,13 +619,13 @@ static ssize_t n_hdlc_tty_read(struct tty_struct *tty, struct file *file,
 			
 		/* no data */
 		if (file->f_flags & O_NONBLOCK) {
-			tty_unlock();
+			unlock_kernel();
 			return -EAGAIN;
 		}
 			
 		interruptible_sleep_on (&tty->read_wait);
 		if (signal_pending(current)) {
-			tty_unlock();
+			unlock_kernel();
 			return -EINTR;
 		}
 	}
@@ -648,7 +648,7 @@ static ssize_t n_hdlc_tty_read(struct tty_struct *tty, struct file *file,
 		kfree(rbuf);
 	else	
 		n_hdlc_buf_put(&n_hdlc->rx_free_buf_list,rbuf);
-	tty_unlock();
+	unlock_kernel();
 	return ret;
 	
 }	/* end of n_hdlc_tty_read() */
@@ -691,7 +691,7 @@ static ssize_t n_hdlc_tty_write(struct tty_struct *tty, struct file *file,
 		count = maxframe;
 	}
 	
-	tty_lock();
+	lock_kernel();
 
 	add_wait_queue(&tty->write_wait, &wait);
 	set_current_state(TASK_INTERRUPTIBLE);
@@ -731,7 +731,7 @@ static ssize_t n_hdlc_tty_write(struct tty_struct *tty, struct file *file,
 		n_hdlc_buf_put(&n_hdlc->tx_buf_list,tbuf);
 		n_hdlc_send_frames(n_hdlc,tty);
 	}
-	tty_unlock();
+	unlock_kernel();
 	return error;
 	
 }	/* end of n_hdlc_tty_write() */

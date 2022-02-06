@@ -151,6 +151,7 @@ static int event__synthesize_mmap_events(pid_t pid, pid_t tgid,
 			continue;
 		pbf += n + 3;
 		if (*pbf == 'x') { /* vm_exec */
+			u64 vm_pgoff;
 			char *execname = strchr(bf, '/');
 
 			/* Catch VDSO */
@@ -161,7 +162,12 @@ static int event__synthesize_mmap_events(pid_t pid, pid_t tgid,
 				continue;
 
 			pbf += 3;
-			n = hex2u64(pbf, &ev.mmap.pgoff);
+			n = hex2u64(pbf, &vm_pgoff);
+			/* pgoff is in bytes, not pages */
+			if (n >= 0)
+				ev.mmap.pgoff = vm_pgoff << getpagesize();
+			else
+				ev.mmap.pgoff = 0;
 
 			size = strlen(execname);
 			execname[size - 1] = '\0'; /* Remove \n */
@@ -334,29 +340,30 @@ int event__synthesize_kernel_mmap(event__handler_t process,
 	return process(&ev, session);
 }
 
-static void thread__comm_adjust(struct thread *self, struct hists *hists)
+static void thread__comm_adjust(struct thread *self)
 {
 	char *comm = self->comm;
 
 	if (!symbol_conf.col_width_list_str && !symbol_conf.field_sep &&
 	    (!symbol_conf.comm_list ||
 	     strlist__has_entry(symbol_conf.comm_list, comm))) {
-		u16 slen = strlen(comm);
+		unsigned int slen = strlen(comm);
 
-		if (hists__new_col_len(hists, HISTC_COMM, slen))
-			hists__set_col_len(hists, HISTC_THREAD, slen + 6);
+		if (slen > comms__col_width) {
+			comms__col_width = slen;
+			threads__col_width = slen + 6;
+		}
 	}
 }
 
-static int thread__set_comm_adjust(struct thread *self, const char *comm,
-				   struct hists *hists)
+static int thread__set_comm_adjust(struct thread *self, const char *comm)
 {
 	int ret = thread__set_comm(self, comm);
 
 	if (ret)
 		return ret;
 
-	thread__comm_adjust(self, hists);
+	thread__comm_adjust(self);
 
 	return 0;
 }
@@ -367,8 +374,7 @@ int event__process_comm(event_t *self, struct perf_session *session)
 
 	dump_printf(": %s:%d\n", self->comm.comm, self->comm.tid);
 
-	if (thread == NULL || thread__set_comm_adjust(thread, self->comm.comm,
-						      &session->hists)) {
+	if (thread == NULL || thread__set_comm_adjust(thread, self->comm.comm)) {
 		dump_printf("problem processing PERF_RECORD_COMM, skipping event.\n");
 		return -1;
 	}
@@ -450,7 +456,6 @@ static int event__process_kernel_mmap(event_t *self,
 			goto out_problem;
 
 		map->dso->short_name = name;
-		map->dso->sname_alloc = 1;
 		map->end = map->start + self->mmap.len;
 	} else if (is_kernel_mmap) {
 		const char *symbol_name = (self->mmap.filename +
@@ -509,13 +514,12 @@ int event__process_mmap(event_t *self, struct perf_session *session)
 	if (machine == NULL)
 		goto out_problem;
 	thread = perf_session__findnew(session, self->mmap.pid);
-	if (thread == NULL)
-		goto out_problem;
 	map = map__new(&machine->user_dsos, self->mmap.start,
 			self->mmap.len, self->mmap.pgoff,
 			self->mmap.pid, self->mmap.filename,
-			MAP__FUNCTION);
-	if (map == NULL)
+			MAP__FUNCTION, session->cwd, session->cwdlen);
+
+	if (thread == NULL || map == NULL)
 		goto out_problem;
 
 	thread__insert_map(thread, map);
@@ -543,26 +547,6 @@ int event__process_task(event_t *self, struct perf_session *session)
 	    thread__fork(thread, parent) < 0) {
 		dump_printf("problem processing PERF_RECORD_FORK, skipping event.\n");
 		return -1;
-	}
-
-	return 0;
-}
-
-int event__process(event_t *event, struct perf_session *session)
-{
-	switch (event->header.type) {
-	case PERF_RECORD_COMM:
-		event__process_comm(event, session);
-		break;
-	case PERF_RECORD_MMAP:
-		event__process_mmap(event, session);
-		break;
-	case PERF_RECORD_FORK:
-	case PERF_RECORD_EXIT:
-		event__process_task(event, session);
-		break;
-	default:
-		break;
 	}
 
 	return 0;
@@ -657,49 +641,27 @@ void thread__find_addr_location(struct thread *self,
 		al->sym = NULL;
 }
 
-static void dso__calc_col_width(struct dso *self, struct hists *hists)
+static void dso__calc_col_width(struct dso *self)
 {
 	if (!symbol_conf.col_width_list_str && !symbol_conf.field_sep &&
 	    (!symbol_conf.dso_list ||
 	     strlist__has_entry(symbol_conf.dso_list, self->name))) {
-		u16 slen = dso__name_len(self);
-		hists__new_col_len(hists, HISTC_DSO, slen);
+		u16 slen = self->short_name_len;
+		if (verbose)
+			slen = self->long_name_len;
+		if (dsos__col_width < slen)
+			dsos__col_width = slen;
 	}
 
 	self->slen_calculated = 1;
 }
 
 int event__preprocess_sample(const event_t *self, struct perf_session *session,
-			     struct addr_location *al, struct sample_data *data,
-			     symbol_filter_t filter)
+			     struct addr_location *al, symbol_filter_t filter)
 {
 	u8 cpumode = self->header.misc & PERF_RECORD_MISC_CPUMODE_MASK;
-	struct thread *thread;
+	struct thread *thread = perf_session__findnew(session, self->ip.pid);
 
-	event__parse_sample(self, session->sample_type, data);
-
-	dump_printf("(IP, %d): %d/%d: %#Lx period: %Ld cpu:%d\n",
-		    self->header.misc, data->pid, data->tid, data->ip,
-		    data->period, data->cpu);
-
-	if (session->sample_type & PERF_SAMPLE_CALLCHAIN) {
-		unsigned int i;
-
-		dump_printf("... chain: nr:%Lu\n", data->callchain->nr);
-
-		if (!ip_callchain__valid(data->callchain, self)) {
-			pr_debug("call-chain problem with event, "
-				 "skipping it.\n");
-			goto out_filtered;
-		}
-
-		if (dump_trace) {
-			for (i = 0; i < data->callchain->nr; i++)
-				dump_printf("..... %2d: %016Lx\n",
-					    i, data->callchain->ips[i]);
-		}
-	}
-	thread = perf_session__findnew(session, self->ip.pid);
 	if (thread == NULL)
 		return -1;
 
@@ -725,7 +687,6 @@ int event__preprocess_sample(const event_t *self, struct perf_session *session,
 		    al->map ? al->map->dso->long_name :
 			al->level == 'H' ? "[hypervisor]" : "<not found>");
 	al->sym = NULL;
-	al->cpu = data->cpu;
 
 	if (al->map) {
 		if (symbol_conf.dso_list &&
@@ -742,17 +703,16 @@ int event__preprocess_sample(const event_t *self, struct perf_session *session,
 		 * sampled.
 		 */
 		if (!sort_dso.elide && !al->map->dso->slen_calculated)
-			dso__calc_col_width(al->map->dso, &session->hists);
+			dso__calc_col_width(al->map->dso);
 
 		al->sym = map__find_symbol(al->map, al->addr, filter);
 	} else {
 		const unsigned int unresolved_col_width = BITS_PER_LONG / 4;
 
-		if (hists__col_len(&session->hists, HISTC_DSO) < unresolved_col_width &&
+		if (dsos__col_width < unresolved_col_width &&
 		    !symbol_conf.col_width_list_str && !symbol_conf.field_sep &&
 		    !symbol_conf.dso_list)
-			hists__set_col_len(&session->hists, HISTC_DSO,
-					   unresolved_col_width);
+			dsos__col_width = unresolved_col_width;
 	}
 
 	if (symbol_conf.sym_list && al->sym &&
@@ -766,9 +726,9 @@ out_filtered:
 	return 0;
 }
 
-int event__parse_sample(const event_t *event, u64 type, struct sample_data *data)
+int event__parse_sample(event_t *event, u64 type, struct sample_data *data)
 {
-	const u64 *array = event->sample.array;
+	u64 *array = event->sample.array;
 
 	if (type & PERF_SAMPLE_IP) {
 		data->ip = event->ip.ip;
@@ -807,8 +767,7 @@ int event__parse_sample(const event_t *event, u64 type, struct sample_data *data
 		u32 *p = (u32 *)array;
 		data->cpu = *p;
 		array++;
-	} else
-		data->cpu = -1;
+	}
 
 	if (type & PERF_SAMPLE_PERIOD) {
 		data->period = *array;

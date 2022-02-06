@@ -704,6 +704,17 @@ static char *host_addr;
 module_param(host_addr, charp, S_IRUGO);
 MODULE_PARM_DESC(host_addr, "Host Ethernet Address");
 
+
+static u8 __init nibble(unsigned char c)
+{
+	if (isdigit(c))
+		return c - '0';
+	c = toupper(c);
+	if (isxdigit(c))
+		return 10 + c - 'A';
+	return 0;
+}
+
 static int get_ether_addr(const char *str, u8 *dev_addr)
 {
 	if (str) {
@@ -714,8 +725,8 @@ static int get_ether_addr(const char *str, u8 *dev_addr)
 
 			if ((*str == '.') || (*str == ':'))
 				str++;
-			num = hex_to_bin(*str++) << 4;
-			num |= hex_to_bin(*str++);
+			num = nibble(*str++) << 4;
+			num |= (nibble(*str++));
 			dev_addr [i] = num;
 		}
 		if (is_valid_ether_addr(dev_addr))
@@ -936,7 +947,6 @@ void gether_disconnect(struct gether *link)
 	struct eth_dev		*dev = link->ioport;
 	struct usb_request	*req;
 
-	WARN_ON(!dev);
 	if (!dev)
 		return;
 

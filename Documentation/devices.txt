@@ -445,7 +445,6 @@ Your cooperation is appreciated.
 		233 = /dev/kmview	View-OS A process with a view
 		234 = /dev/btrfs-control	Btrfs control device
 		235 = /dev/autofs	Autofs control device
-		236 = /dev/mapper/control	Device-Mapper control device
 		240-254			Reserved for local use
 		255			Reserved for MISC_DYNAMIC_MINOR
 
@@ -1518,7 +1517,7 @@ Your cooperation is appreciated.
 		    ...
 
 		The driver and documentation may be obtained from
-		http://www.winradio.com/
+		http://www.proximity.com.au/~brian/winradio/
 
  82 block	I2O hard disk
 		  0 = /dev/i2o/hdag	33rd I2O hard disk, whole disk
@@ -1724,7 +1723,7 @@ Your cooperation is appreciated.
 		  1 = /dev/comedi1	Second comedi device
 		    ...
 
-		See http://stm.lbl.gov/comedi.
+		See http://stm.lbl.gov/comedi or http://www.llp.fu-berlin.de/.
 
  98 block	User-mode virtual block device
 		  0 = /dev/ubda		First user-mode block device
@@ -1985,7 +1984,7 @@ Your cooperation is appreciated.
                 256 NetWare volumes can be supported in a single
                 machine.
 
-                http://cgfa.telepac.pt/ftp2/kernel.org/linux/kernel/people/jmerkey/nwfs/
+                http://www.kernel.org/pub/linux/kernel/people/jmerkey/nwfs
 
                 0 = /dev/nwfs/v0    First NetWare (NWFS) Logical Volume
                 1 = /dev/nwfs/v1    Second NetWare (NWFS) Logical Volume
@@ -2592,8 +2591,7 @@ Your cooperation is appreciated.
 		  1 = /dev/intermezzo1	Second cache manager
 		    ...
 
-		See http://web.archive.org/web/20080115195241/
-		http://inter-mezzo.org/index.html
+		See http://www.inter-mezzo.org/ for more information.
 
 186 char	Object-based storage control device
 		  0 = /dev/obd0		First obd control device

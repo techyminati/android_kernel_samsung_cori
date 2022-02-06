@@ -187,7 +187,6 @@ void __init check_wait(void)
 	case CPU_BCM6358:
 	case CPU_CAVIUM_OCTEON:
 	case CPU_CAVIUM_OCTEON_PLUS:
-	case CPU_JZRISC:
 		cpu_wait = r4k_wait;
 		break;
 
@@ -761,9 +760,6 @@ static void __cpuinit decode_configs(struct cpuinfo_mips *c)
 		ok = decode_config4(c);
 
 	mips_probe_watch_registers(c);
-
-	if (cpu_has_mips_r2)
-		c->core = read_c0_ebase() & 0x3ff;
 }
 
 static inline void cpu_probe_mips(struct cpuinfo_mips *c, unsigned int cpu)
@@ -960,22 +956,6 @@ platform:
 	}
 }
 
-static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
-{
-	decode_configs(c);
-	/* JZRISC does not implement the CP0 counter. */
-	c->options &= ~MIPS_CPU_COUNTER;
-	switch (c->processor_id & 0xff00) {
-	case PRID_IMP_JZRISC:
-		c->cputype = CPU_JZRISC;
-		__cpu_name[cpu] = "Ingenic JZRISC";
-		break;
-	default:
-		panic("Unknown Ingenic Processor ID!");
-		break;
-	}
-}
-
 const char *__cpu_name[NR_CPUS];
 const char *__elf_platform;
 
@@ -1013,9 +993,6 @@ __cpuinit void cpu_probe(void)
 		break;
 	case PRID_COMP_CAVIUM:
 		cpu_probe_cavium(c, cpu);
-		break;
-	case PRID_COMP_INGENIC:
-		cpu_probe_ingenic(c, cpu);
 		break;
 	}
 

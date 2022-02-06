@@ -1,15 +1,11 @@
 
 #include <linux/errno.h>
 
-int ceph_armor(char *dst, const char *src, const char *end);
-int ceph_unarmor(char *dst, const char *src, const char *end);
-
 /*
  * base64 encode/decode.
  */
 
-static const char *pem_key =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const char *pem_key = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static int encode_bits(int c)
 {

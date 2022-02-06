@@ -1,5 +1,5 @@
 /*
- * Afatech AF9013 demodulator driver
+ * DVB USB Linux driver for Afatech AF9015 DVB-T USB2.0 receiver
  *
  * Copyright (C) 2007 Antti Palosaari <crope@iki.fi>
  *

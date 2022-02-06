@@ -16,6 +16,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/ss.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
@@ -47,12 +48,11 @@ struct resource *pcmcia_make_resource(unsigned long start, unsigned long end,
 
 static int static_find_io(struct pcmcia_socket *s, unsigned int attr,
 			unsigned int *base, unsigned int num,
-			unsigned int align, struct resource **parent)
+			unsigned int align)
 {
 	if (!s->io_offset)
 		return -EINVAL;
 	*base = s->io_offset | (*base & 0x0fff);
-	*parent = NULL;
 
 	return 0;
 }
@@ -62,6 +62,8 @@ struct pccard_resource_ops pccard_static_ops = {
 	.validate_mem = NULL,
 	.find_io = static_find_io,
 	.find_mem = NULL,
+	.add_io = NULL,
+	.add_mem = NULL,
 	.init = static_init,
 	.exit = NULL,
 };

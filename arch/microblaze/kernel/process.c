@@ -76,11 +76,8 @@ __setup("hlt", hlt_setup);
 void default_idle(void)
 {
 	if (likely(hlt_counter)) {
-		local_irq_disable();
-		stop_critical_timings();
-		cpu_relax();
-		start_critical_timings();
-		local_irq_enable();
+		while (!need_resched())
+			cpu_relax();
 	} else {
 		clear_thread_flag(TIF_POLLING_NRFLAG);
 		smp_mb__after_clear_bit();

@@ -73,7 +73,6 @@ static void
 bfa_fcs_rpf_sm_uninit(struct bfa_fcs_rpf_s *rpf, enum rpf_event event)
 {
 	struct bfa_fcs_rport_s *rport = rpf->rport;
-	struct bfa_fcs_fabric_s *fabric = &rport->fcs->fabric;
 
 	bfa_trc(rport->fcs, rport->pwwn);
 	bfa_trc(rport->fcs, rport->pid);
@@ -81,16 +80,12 @@ bfa_fcs_rpf_sm_uninit(struct bfa_fcs_rpf_s *rpf, enum rpf_event event)
 
 	switch (event) {
 	case RPFSM_EVENT_RPORT_ONLINE:
-		/* Send RPSC2 to a Brocade fabric only. */
-		if ((!BFA_FCS_PID_IS_WKA(rport->pid)) &&
-			((bfa_lps_is_brcd_fabric(rport->port->fabric->lps)) ||
-			(bfa_fcs_fabric_get_switch_oui(fabric) ==
-						BFA_FCS_BRCD_SWITCH_OUI))) {
+		if (!BFA_FCS_PID_IS_WKA(rport->pid)) {
 			bfa_sm_set_state(rpf, bfa_fcs_rpf_sm_rpsc_sending);
 			rpf->rpsc_retries = 0;
 			bfa_fcs_rpf_send_rpsc2(rpf, NULL);
-		}
-		break;
+			break;
+		};
 
 	case RPFSM_EVENT_RPORT_OFFLINE:
 		break;
@@ -274,7 +269,6 @@ void  bfa_fcs_rpf_rport_offline(struct bfa_fcs_rport_s *rport)
 	if (__fcs_min_cfg(rport->port->fcs))
 		return;
 
-	rport->rpf.rpsc_speed = 0;
 	bfa_sm_send_event(&rport->rpf, RPFSM_EVENT_RPORT_OFFLINE);
 }
 
@@ -313,7 +307,7 @@ bfa_fcs_rpf_send_rpsc2(void *rpf_cbarg, struct bfa_fcxp_s *fcxp_alloced)
 
 	bfa_fcxp_send(fcxp, NULL, port->fabric->vf_id, port->lp_tag, BFA_FALSE,
 			  FC_CLASS_3, len, &fchs, bfa_fcs_rpf_rpsc2_response,
-			  rpf, FC_MAX_PDUSZ, FC_ELS_TOV);
+			  rpf, FC_MAX_PDUSZ, FC_RA_TOV);
 	rport->stats.rpsc_sent++;
 	bfa_sm_send_event(rpf, RPFSM_EVENT_FCXP_SENT);
 

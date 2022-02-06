@@ -320,17 +320,13 @@ config AUDITSYSCALL
 	help
 	  Enable low-overhead system-call auditing infrastructure that
 	  can be used independently or with another kernel subsystem,
-	  such as SELinux.
-
-config AUDIT_WATCH
-	def_bool y
-	depends on AUDITSYSCALL
-	select FSNOTIFY
+	  such as SELinux.  To use audit's filesystem watch feature, please
+	  ensure that INOTIFY is configured.
 
 config AUDIT_TREE
 	def_bool y
 	depends on AUDITSYSCALL
-	select FSNOTIFY
+	select INOTIFY
 
 menu "RCU Subsystem"
 
@@ -577,8 +573,8 @@ config CGROUP_MEM_RES_CTLR
 	  could in turn add some fork/exit overhead.
 
 config CGROUP_MEM_RES_CTLR_SWAP
-	bool "Memory Resource Controller Swap Extension"
-	depends on CGROUP_MEM_RES_CTLR && SWAP
+	bool "Memory Resource Controller Swap Extension(EXPERIMENTAL)"
+	depends on CGROUP_MEM_RES_CTLR && SWAP && EXPERIMENTAL
 	help
 	  Add swap management feature to memory resource controller. When you
 	  enable this, you can limit mem+swap usage per cgroup. In other words,
@@ -790,6 +786,12 @@ config SYSCTL
 config ANON_INODES
 	bool
 
+config PANIC_TIMEOUT
+	int "Default panic timeout"
+	default 0
+	help
+	  Set default panic timeout.
+
 menuconfig EMBEDDED
 	bool "Configure standard kernel features (for small systems)"
 	help
@@ -961,6 +963,15 @@ config SHMEM
 	  to userspace as tmpfs if TMPFS is enabled. Disabling this
 	  option replaces shmem and tmpfs with the much simpler ramfs code,
 	  which may be appropriate on small systems without swap.
+
+config ASHMEM
+	bool "Enable the Anonymous Shared Memory Subsystem"
+	default n
+	depends on SHMEM || TINY_SHMEM
+	help
+	  The ashmem subsystem is a new shared memory allocator, similar to
+	  POSIX SHM but with different behavior and sporting a simpler
+	  file-based API.
 
 config AIO
 	bool "Enable AIO support" if EMBEDDED
@@ -1146,6 +1157,30 @@ config TRACEPOINTS
 	bool
 
 source "arch/Kconfig"
+
+config SLOW_WORK
+	default n
+	bool
+	help
+	  The slow work thread pool provides a number of dynamically allocated
+	  threads that can be used by the kernel to perform operations that
+	  take a relatively long time.
+
+	  An example of this would be CacheFiles doing a path lookup followed
+	  by a series of mkdirs and a create call, all of which have to touch
+	  disk.
+
+	  See Documentation/slow-work.txt.
+
+config SLOW_WORK_DEBUG
+	bool "Slow work debugging through debugfs"
+	default n
+	depends on SLOW_WORK && DEBUG_FS
+	help
+	  Display the contents of the slow work run queue through debugfs,
+	  including items currently executing.
+
+	  See Documentation/slow-work.txt.
 
 endmenu		# General setup
 

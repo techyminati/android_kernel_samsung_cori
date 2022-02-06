@@ -390,8 +390,6 @@ done:
 	ipath_enable_armlaunch(dd);
 }
 
-static void cleanup_device(struct ipath_devdata *dd);
-
 static int __devinit ipath_init_one(struct pci_dev *pdev,
 				    const struct pci_device_id *ent)
 {
@@ -618,13 +616,8 @@ static int __devinit ipath_init_one(struct pci_dev *pdev,
 	goto bail;
 
 bail_irqsetup:
-	cleanup_device(dd);
-
-	if (dd->ipath_irq)
-		dd->ipath_f_free_irq(dd);
-
-	if (dd->ipath_f_cleanup)
-		dd->ipath_f_cleanup(dd);
+	if (pdev->irq)
+		free_irq(pdev->irq, dd);
 
 bail_iounmap:
 	iounmap((volatile void __iomem *) dd->ipath_kregbase);
@@ -642,7 +635,7 @@ bail:
 	return ret;
 }
 
-static void cleanup_device(struct ipath_devdata *dd)
+static void __devexit cleanup_device(struct ipath_devdata *dd)
 {
 	int port;
 	struct ipath_portdata **tmp;

@@ -84,16 +84,16 @@ nouveau_user_framebuffer_create(struct drm_device *dev,
 
 	gem = drm_gem_object_lookup(dev, file_priv, mode_cmd->handle);
 	if (!gem)
-		return ERR_PTR(-ENOENT);
+		return NULL;
 
 	nouveau_fb = kzalloc(sizeof(struct nouveau_framebuffer), GFP_KERNEL);
 	if (!nouveau_fb)
-		return ERR_PTR(-ENOMEM);
+		return NULL;
 
 	ret = nouveau_framebuffer_init(dev, nouveau_fb, mode_cmd, nouveau_gem_object(gem));
 	if (ret) {
 		drm_gem_object_unreference(gem);
-		return ERR_PTR(ret);
+		return NULL;
 	}
 
 	return &nouveau_fb->base;

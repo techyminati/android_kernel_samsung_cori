@@ -584,6 +584,7 @@ static void cpia_disconnect(struct usb_interface *intf)
 {
 	struct cam_data *cam = usb_get_intfdata(intf);
 	struct usb_cpia *ucpia;
+	struct usb_device *udev;
 
 	usb_set_intfdata(intf, NULL);
 	if (!cam)
@@ -604,6 +605,8 @@ static void cpia_disconnect(struct usb_interface *intf)
 
 	if (waitqueue_active(&ucpia->wq_stream))
 		wake_up_interruptible(&ucpia->wq_stream);
+
+	udev = interface_to_usbdev(intf);
 
 	ucpia->curbuff = ucpia->workbuff = NULL;
 

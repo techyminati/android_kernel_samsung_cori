@@ -43,6 +43,7 @@
 #include <mach/irda.h>
 #include <mach/poodle.h>
 #include <mach/pxafb.h>
+#include <mach/sharpsl.h>
 #include <mach/pxa2xx_spi.h>
 #include <plat/i2c.h>
 
@@ -52,6 +53,7 @@
 
 #include "generic.h"
 #include "devices.h"
+#include "sharpsl.h"
 
 static unsigned long poodle_pin_config[] __initdata = {
 	/* I/O */
@@ -461,6 +463,7 @@ static void __init fixup_poodle(struct machine_desc *desc,
 	sharpsl_save_param();
 	mi->nr_banks=1;
 	mi->bank[0].start = 0xa0000000;
+	mi->bank[0].node = 0;
 	mi->bank[0].size = (32*1024*1024);
 }
 

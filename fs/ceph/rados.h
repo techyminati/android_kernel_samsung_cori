@@ -1,5 +1,5 @@
-#ifndef CEPH_RADOS_H
-#define CEPH_RADOS_H
+#ifndef __RADOS_H
+#define __RADOS_H
 
 /*
  * Data types for the Ceph distributed object storage layer RADOS
@@ -203,7 +203,6 @@ enum {
 	CEPH_OSD_OP_TMAPGET = CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_DATA | 12,
 
 	CEPH_OSD_OP_CREATE  = CEPH_OSD_OP_MODE_WR | CEPH_OSD_OP_TYPE_DATA | 13,
-	CEPH_OSD_OP_ROLLBACK= CEPH_OSD_OP_MODE_WR | CEPH_OSD_OP_TYPE_DATA | 14,
 
 	/** attrs **/
 	/* read */
@@ -273,10 +272,6 @@ static inline int ceph_osd_op_mode_modify(int op)
 	return (op & CEPH_OSD_OP_MODE) == CEPH_OSD_OP_MODE_WR;
 }
 
-/*
- * note that the following tmap stuff is also defined in the ceph librados.h
- * any modification here needs to be updated there
- */
 #define CEPH_OSD_TMAP_HDR 'h'
 #define CEPH_OSD_TMAP_SET 's'
 #define CEPH_OSD_TMAP_RM  'r'
@@ -302,7 +297,6 @@ enum {
 	CEPH_OSD_FLAG_PARALLELEXEC = 512, /* execute op in parallel */
 	CEPH_OSD_FLAG_PGOP = 1024,      /* pg op, no object */
 	CEPH_OSD_FLAG_EXEC = 2048,      /* op may exec */
-	CEPH_OSD_FLAG_EXEC_PUBLIC = 4096, /* op may exec (public) */
 };
 
 enum {
@@ -356,9 +350,6 @@ struct ceph_osd_op {
 		struct {
 			__le64 cookie, count;
 		} __attribute__ ((packed)) pgls;
-	        struct {
-		        __le64 snapid;
-	        } __attribute__ ((packed)) snap;
 	};
 	__le32 payload_len;
 } __attribute__ ((packed));

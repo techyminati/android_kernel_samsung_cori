@@ -26,16 +26,20 @@
 
 #include <asm/atomic.h>
 #include <asm/cacheflush.h>
+#include <asm/outercache.h>
 #include <asm/system.h>
 #include <asm/unistd.h>
 #include <asm/traps.h>
 #include <asm/unwind.h>
-#include <asm/tls.h>
 
 #include "ptrace.h"
 #include "signal.h"
 
 static const char *handler[]= { "prefetch abort", "data abort", "address exception", "interrupt" };
+#ifdef CONFIG_BRCM_KPANIC_UI_IND
+#include <linux/broadcom/lcdc_dispimg.h>
+extern int cp_crashed;
+#endif
 
 #ifdef CONFIG_DEBUG_USER
 unsigned int user_debug;
@@ -268,6 +272,15 @@ void die(const char *str, struct pt_regs *regs, int err)
 	int ret;
 
 	oops_enter();
+#ifdef CONFIG_BRCM_KPANIC_UI_IND
+	if (!lcdc_showing_dump())
+	{
+		if (!cp_crashed)
+			lcdc_disp_img(IMG_INDEX_AP_DUMP); 
+		else
+			lcdc_disp_img(IMG_INDEX_CP_DUMP); 
+	}
+#endif
 
 	spin_lock_irq(&die_lock);
 	console_verbose();
@@ -454,7 +467,12 @@ do_cache_op(unsigned long start, unsigned long end, int flags)
 		if (end > vma->vm_end)
 			end = vma->vm_end;
 
-		flush_cache_user_range(vma, start, end);
+		up_read(&mm->mmap_sem);
+		flush_cache_user_range(start, end);
+		/* Dont know the phys address to clean, hence clean
+		 * everything */
+		outer_clean_range(0, (130 * 1024));
+		return;
 	}
 	up_read(&mm->mmap_sem);
 }
@@ -519,20 +537,18 @@ asmlinkage int arm_syscall(int no, struct pt_regs *regs)
 
 	case NR(set_tls):
 		thread->tp_value = regs->ARM_r0;
-		if (tls_emu)
-			return 0;
-		if (has_tls_reg) {
-			asm ("mcr p15, 0, %0, c13, c0, 3"
-				: : "r" (regs->ARM_r0));
-		} else {
-			/*
-			 * User space must never try to access this directly.
-			 * Expect your app to break eventually if you do so.
-			 * The user helper at 0xffff0fe0 must be used instead.
-			 * (see entry-armv.S for details)
-			 */
-			*((unsigned int *)0xffff0ff0) = regs->ARM_r0;
-		}
+#if defined(CONFIG_HAS_TLS_REG)
+		asm ("mcr p15, 0, %0, c13, c0, 3" : : "r" (regs->ARM_r0) );
+//#elif !defined(CONFIG_TLS_REG_EMUL)
+#endif
+		/*
+		 * User space must never try to access this directly.
+		 * Expect your app to break eventually if you do so.
+		 * The user helper at 0xffff0fe0 must be used instead.
+		 * (see entry-armv.S for details)
+		 */
+		*((unsigned int *)0xffff0ff0) = regs->ARM_r0;
+//#endif
 		return 0;
 
 #ifdef CONFIG_NEEDS_SYSCALL_FOR_CMPXCHG
@@ -740,21 +756,22 @@ void abort(void)
 	/* if that doesn't kill us, halt */
 	panic("Oops failed to kill thread");
 }
+
+#if defined(CONFIG_SEC_DEBUG)
+void cp_abort(void)
+{
+	//BUG();
+
+	/* if that doesn't kill us, halt */
+	panic("CP Crash");
+}
+#endif
+
 EXPORT_SYMBOL(abort);
 
 void __init trap_init(void)
 {
 	return;
-}
-
-static void __init kuser_get_tls_init(unsigned long vectors)
-{
-	/*
-	 * vectors + 0xfe0 = __kuser_get_tls
-	 * vectors + 0xfe8 = hardware TLS instruction at 0xffff0fe8
-	 */
-	if (tls_emu || has_tls_reg)
-		memcpy((void *)vectors + 0xfe0, (void *)vectors + 0xfe8, 4);
 }
 
 void __init early_trap_init(void)
@@ -773,11 +790,6 @@ void __init early_trap_init(void)
 	memcpy((void *)vectors, __vectors_start, __vectors_end - __vectors_start);
 	memcpy((void *)vectors + 0x200, __stubs_start, __stubs_end - __stubs_start);
 	memcpy((void *)vectors + 0x1000 - kuser_sz, __kuser_helper_start, kuser_sz);
-
-	/*
-	 * Do processor specific fixups for the kuser helpers
-	 */
-	kuser_get_tls_init(vectors);
 
 	/*
 	 * Copy signal return handlers into the vector page, and

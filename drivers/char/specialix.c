@@ -1365,9 +1365,7 @@ static int block_til_ready(struct tty_struct *tty, struct file *filp,
 			retval = -ERESTARTSYS;
 			break;
 		}
-		tty_unlock();
 		schedule();
-		tty_lock();
 	}
 
 	set_current_state(TASK_RUNNING);
@@ -1865,7 +1863,8 @@ static int sx_set_serial_info(struct specialix_port *port,
 		return -EFAULT;
 	}
 
-	mutex_lock(&port->port.mutex);
+	lock_kernel();
+
 	change_speed = ((port->port.flags & ASYNC_SPD_MASK) !=
 			(tmp.flags & ASYNC_SPD_MASK));
 	change_speed |= (tmp.custom_divisor != port->custom_divisor);
@@ -1876,7 +1875,7 @@ static int sx_set_serial_info(struct specialix_port *port,
 		    ((tmp.flags & ~ASYNC_USR_MASK) !=
 		     (port->port.flags & ~ASYNC_USR_MASK))) {
 			func_exit();
-			mutex_unlock(&port->port.mutex);
+			unlock_kernel();
 			return -EPERM;
 		}
 		port->port.flags = ((port->port.flags & ~ASYNC_USR_MASK) |
@@ -1893,7 +1892,7 @@ static int sx_set_serial_info(struct specialix_port *port,
 		sx_change_speed(bp, port);
 
 	func_exit();
-	mutex_unlock(&port->port.mutex);
+	unlock_kernel();
 	return 0;
 }
 
@@ -1907,7 +1906,7 @@ static int sx_get_serial_info(struct specialix_port *port,
 	func_enter();
 
 	memset(&tmp, 0, sizeof(tmp));
-	mutex_lock(&port->port.mutex);
+	lock_kernel();
 	tmp.type = PORT_CIRRUS;
 	tmp.line = port - sx_port;
 	tmp.port = bp->base;
@@ -1918,7 +1917,7 @@ static int sx_get_serial_info(struct specialix_port *port,
 	tmp.closing_wait = port->port.closing_wait * HZ/100;
 	tmp.custom_divisor =  port->custom_divisor;
 	tmp.xmit_fifo_size = CD186x_NFIFO;
-	mutex_unlock(&port->port.mutex);
+	unlock_kernel();
 	if (copy_to_user(retinfo, &tmp, sizeof(tmp))) {
 		func_exit();
 		return -EFAULT;

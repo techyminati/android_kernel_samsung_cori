@@ -649,9 +649,7 @@ static void parse_codec_mode(char *buf, struct hda_bus *bus,
 	*codecp = NULL;
 	if (sscanf(buf, "%i %i %i", &vendorid, &subid, &caddr) == 3) {
 		list_for_each_entry(codec, &bus->codec_list, list) {
-			if (codec->vendor_id == vendorid &&
-			    codec->subsystem_id == subid &&
-			    codec->addr == caddr) {
+			if (codec->addr == caddr) {
 				*codecp = codec;
 				break;
 			}

@@ -589,16 +589,16 @@ static bool reg_read_allowed(const struct ab3550_reg_ranges *ranges, u8 reg)
 }
 
 /*
- * The register access functionality.
+ * The exported register access functionality.
  */
-static int ab3550_get_chip_id(struct device *dev)
+int ab3550_get_chip_id(struct device *dev)
 {
 	struct ab3550 *ab = dev_get_drvdata(dev->parent);
 	return (int)ab->chip_id;
 }
 
-static int ab3550_mask_and_set_register_interruptible(struct device *dev,
-	u8 bank, u8 reg, u8 bitmask, u8 bitvalues)
+int ab3550_mask_and_set_register_interruptible(struct device *dev, u8 bank,
+	u8 reg, u8 bitmask, u8 bitvalues)
 {
 	struct ab3550 *ab;
 	struct platform_device *pdev = to_platform_device(dev);
@@ -612,15 +612,15 @@ static int ab3550_mask_and_set_register_interruptible(struct device *dev,
 		bitmask, bitvalues);
 }
 
-static int ab3550_set_register_interruptible(struct device *dev, u8 bank,
-	u8 reg, u8 value)
+int ab3550_set_register_interruptible(struct device *dev, u8 bank, u8 reg,
+	u8 value)
 {
 	return ab3550_mask_and_set_register_interruptible(dev, bank, reg, 0xFF,
 		value);
 }
 
-static int ab3550_get_register_interruptible(struct device *dev, u8 bank,
-	u8 reg, u8 *value)
+int ab3550_get_register_interruptible(struct device *dev, u8 bank, u8 reg,
+	u8 *value)
 {
 	struct ab3550 *ab;
 	struct platform_device *pdev = to_platform_device(dev);
@@ -633,7 +633,7 @@ static int ab3550_get_register_interruptible(struct device *dev, u8 bank,
 	return get_register_interruptible(ab, bank, reg, value);
 }
 
-static int ab3550_get_register_page_interruptible(struct device *dev, u8 bank,
+int ab3550_get_register_page_interruptible(struct device *dev, u8 bank,
 	u8 first_reg, u8 *regvals, u8 numregs)
 {
 	struct ab3550 *ab;
@@ -649,8 +649,7 @@ static int ab3550_get_register_page_interruptible(struct device *dev, u8 bank,
 		numregs);
 }
 
-static int ab3550_event_registers_startup_state_get(struct device *dev,
-	u8 *event)
+int ab3550_event_registers_startup_state_get(struct device *dev, u8 *event)
 {
 	struct ab3550 *ab;
 
@@ -662,7 +661,7 @@ static int ab3550_event_registers_startup_state_get(struct device *dev,
 	return 0;
 }
 
-static int ab3550_startup_irq_enabled(struct device *dev, unsigned int irq)
+int ab3550_startup_irq_enabled(struct device *dev, unsigned int irq)
 {
 	struct ab3550 *ab;
 	struct ab3550_platform_data *plf_data;

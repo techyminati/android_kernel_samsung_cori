@@ -22,6 +22,11 @@
  *      Is it possible to remove and reinstall the urb in raw-event- or any
  *      other handler, or to defer this action to be executed somewhere else?
  *
+ * TODO implement notification mechanism for overlong macro execution
+ *      If user wants to execute an overlong macro only the names of macroset
+ *      and macro are given. Should userland tap hidraw or is there an
+ *      additional streaming mechanism?
+ *
  * TODO is it possible to overwrite group for sysfs attributes via udev?
  */
 
@@ -272,7 +277,7 @@ static ssize_t kone_sysfs_read_settings(struct file *fp, struct kobject *kobj,
 		count = sizeof(struct kone_settings) - off;
 
 	mutex_lock(&kone->kone_lock);
-	memcpy(buf, ((char const *)&kone->settings) + off, count);
+	memcpy(buf, &kone->settings + off, count);
 	mutex_unlock(&kone->kone_lock);
 
 	return count;
@@ -332,7 +337,7 @@ static ssize_t kone_sysfs_read_profilex(struct kobject *kobj,
 		count = sizeof(struct kone_profile) - off;
 
 	mutex_lock(&kone->kone_lock);
-	memcpy(buf, ((char const *)&kone->profiles[number - 1]) + off, count);
+	memcpy(buf, &kone->profiles[number - 1], sizeof(struct kone_profile));
 	mutex_unlock(&kone->kone_lock);
 
 	return count;
@@ -618,6 +623,18 @@ static ssize_t kone_sysfs_set_startup_profile(struct device *dev,
 }
 
 /*
+ * This file is used by userland software to find devices that are handled by
+ * this driver. This provides a consistent way for actual and older kernels
+ * where this driver replaced usbhid instead of generic-usb.
+ * Driver capabilities are determined by version number.
+ */
+static ssize_t kone_sysfs_show_driver_version(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, ROCCAT_KONE_DRIVER_VERSION "\n");
+}
+
+/*
  * Read actual dpi settings.
  * Returns raw value for further processing. Refer to enum kone_polling_rates to
  * get real value.
@@ -654,6 +671,9 @@ static DEVICE_ATTR(startup_profile, 0660,
 		kone_sysfs_show_startup_profile,
 		kone_sysfs_set_startup_profile);
 
+static DEVICE_ATTR(kone_driver_version, 0440,
+		kone_sysfs_show_driver_version, NULL);
+
 static struct attribute *kone_attributes[] = {
 		&dev_attr_actual_dpi.attr,
 		&dev_attr_actual_profile.attr,
@@ -661,6 +681,7 @@ static struct attribute *kone_attributes[] = {
 		&dev_attr_firmware_version.attr,
 		&dev_attr_tcu.attr,
 		&dev_attr_startup_profile.attr,
+		&dev_attr_kone_driver_version.attr,
 		NULL
 };
 

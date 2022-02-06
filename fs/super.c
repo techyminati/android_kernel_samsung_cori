@@ -363,10 +363,10 @@ EXPORT_SYMBOL(drop_super);
  */
 void sync_supers(void)
 {
-	struct super_block *sb, *p = NULL;
+	struct super_block *sb, *n;
 
 	spin_lock(&sb_lock);
-	list_for_each_entry(sb, &super_blocks, s_list) {
+	list_for_each_entry_safe(sb, n, &super_blocks, s_list) {
 		if (list_empty(&sb->s_instances))
 			continue;
 		if (sb->s_op->write_super && sb->s_dirt) {
@@ -379,13 +379,11 @@ void sync_supers(void)
 			up_read(&sb->s_umount);
 
 			spin_lock(&sb_lock);
-			if (p)
-				__put_super(p);
-			p = sb;
+			/* lock was dropped, must reset next */
+			list_safe_reset_next(sb, n, s_list);
+			__put_super(sb);
 		}
 	}
-	if (p)
-		__put_super(p);
 	spin_unlock(&sb_lock);
 }
 
@@ -399,10 +397,10 @@ void sync_supers(void)
  */
 void iterate_supers(void (*f)(struct super_block *, void *), void *arg)
 {
-	struct super_block *sb, *p = NULL;
+	struct super_block *sb, *n;
 
 	spin_lock(&sb_lock);
-	list_for_each_entry(sb, &super_blocks, s_list) {
+	list_for_each_entry_safe(sb, n, &super_blocks, s_list) {
 		if (list_empty(&sb->s_instances))
 			continue;
 		sb->s_count++;
@@ -414,12 +412,10 @@ void iterate_supers(void (*f)(struct super_block *, void *), void *arg)
 		up_read(&sb->s_umount);
 
 		spin_lock(&sb_lock);
-		if (p)
-			__put_super(p);
-		p = sb;
+		/* lock was dropped, must reset next */
+		list_safe_reset_next(sb, n, s_list);
+		__put_super(sb);
 	}
-	if (p)
-		__put_super(p);
 	spin_unlock(&sb_lock);
 }
 
@@ -581,10 +577,10 @@ int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
 
 static void do_emergency_remount(struct work_struct *work)
 {
-	struct super_block *sb, *p = NULL;
+	struct super_block *sb, *n;
 
 	spin_lock(&sb_lock);
-	list_for_each_entry(sb, &super_blocks, s_list) {
+	list_for_each_entry_safe(sb, n, &super_blocks, s_list) {
 		if (list_empty(&sb->s_instances))
 			continue;
 		sb->s_count++;
@@ -598,12 +594,10 @@ static void do_emergency_remount(struct work_struct *work)
 		}
 		up_write(&sb->s_umount);
 		spin_lock(&sb_lock);
-		if (p)
-			__put_super(p);
-		p = sb;
+		/* lock was dropped, must reset next */
+		list_safe_reset_next(sb, n, s_list);
+		__put_super(sb);
 	}
-	if (p)
-		__put_super(p);
 	spin_unlock(&sb_lock);
 	kfree(work);
 	printk("Emergency Remount complete\n");
@@ -784,16 +778,7 @@ int get_sb_bdev(struct file_system_type *fs_type,
 			goto error_bdev;
 		}
 
-		/*
-		 * s_umount nests inside bd_mutex during
-		 * __invalidate_device().  close_bdev_exclusive()
-		 * acquires bd_mutex and can't be called under
-		 * s_umount.  Drop s_umount temporarily.  This is safe
-		 * as we're holding an active reference.
-		 */
-		up_write(&s->s_umount);
 		close_bdev_exclusive(bdev, mode);
-		down_write(&s->s_umount);
 	} else {
 		char b[BDEVNAME_SIZE];
 

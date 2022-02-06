@@ -364,6 +364,18 @@ static int fat_allow_set_time(struct msdos_sb_info *sbi, struct inode *inode)
 	return 0;
 }
 
+int fat_setsize(struct inode *inode, loff_t offset)
+{
+	int error;
+
+	error = simple_setsize(inode, offset);
+	if (error)
+		return error;
+	fat_truncate_blocks(inode, offset);
+
+	return error;
+}
+
 #define TIMES_SET_FLAGS	(ATTR_MTIME_SET | ATTR_ATIME_SET | ATTR_TIMES_SET)
 /* valid file mode bits */
 #define FAT_VALID_MODE	(S_IFREG | S_IFDIR | S_IRWXUGO)
@@ -374,21 +386,6 @@ int fat_setattr(struct dentry *dentry, struct iattr *attr)
 	struct inode *inode = dentry->d_inode;
 	unsigned int ia_valid;
 	int error;
-
-	/* Check for setting the inode time. */
-	ia_valid = attr->ia_valid;
-	if (ia_valid & TIMES_SET_FLAGS) {
-		if (fat_allow_set_time(sbi, inode))
-			attr->ia_valid &= ~TIMES_SET_FLAGS;
-	}
-
-	error = inode_change_ok(inode, attr);
-	attr->ia_valid = ia_valid;
-	if (error) {
-		if (sbi->options.quiet)
-			error = 0;
-		goto out;
-	}
 
 	/*
 	 * Expand the file. Since inode_setattr() updates ->i_size
@@ -403,6 +400,21 @@ int fat_setattr(struct dentry *dentry, struct iattr *attr)
 				goto out;
 			attr->ia_valid &= ~ATTR_SIZE;
 		}
+	}
+
+	/* Check for setting the inode time. */
+	ia_valid = attr->ia_valid;
+	if (ia_valid & TIMES_SET_FLAGS) {
+		if (fat_allow_set_time(sbi, inode))
+			attr->ia_valid &= ~TIMES_SET_FLAGS;
+	}
+
+	error = inode_change_ok(inode, attr);
+	attr->ia_valid = ia_valid;
+	if (error) {
+		if (sbi->options.quiet)
+			error = 0;
+		goto out;
 	}
 
 	if (((attr->ia_valid & ATTR_UID) &&
@@ -429,11 +441,12 @@ int fat_setattr(struct dentry *dentry, struct iattr *attr)
 	}
 
 	if (attr->ia_valid & ATTR_SIZE) {
-		truncate_setsize(inode, attr->ia_size);
-		fat_truncate_blocks(inode, attr->ia_size);
+		error = fat_setsize(inode, attr->ia_size);
+		if (error)
+			goto out;
 	}
 
-	setattr_copy(inode, attr);
+	generic_setattr(inode, attr);
 	mark_inode_dirty(inode);
 out:
 	return error;

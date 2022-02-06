@@ -111,11 +111,11 @@ static int i2o_cfg_gethrt(unsigned long arg)
 
 	len = 8 + ((hrt->entry_len * hrt->num_entries) << 2);
 
-	if (put_user(len, kcmd.reslen))
-		ret = -EFAULT;
-	else if (len > reslen)
+	/* We did a get user...so assuming mem is ok...is this bad? */
+	put_user(len, kcmd.reslen);
+	if (len > reslen)
 		ret = -ENOBUFS;
-	else if (copy_to_user(kcmd.resbuf, (void *)hrt, len))
+	if (copy_to_user(kcmd.resbuf, (void *)hrt, len))
 		ret = -EFAULT;
 
 	return ret;
@@ -147,9 +147,8 @@ static int i2o_cfg_getlct(unsigned long arg)
 	lct = (i2o_lct *) c->lct;
 
 	len = (unsigned int)lct->table_size << 2;
-	if (put_user(len, kcmd.reslen))
-		ret = -EFAULT;
-	else if (len > reslen)
+	put_user(len, kcmd.reslen);
+	if (len > reslen)
 		ret = -ENOBUFS;
 	else if (copy_to_user(kcmd.resbuf, lct, len))
 		ret = -EFAULT;
@@ -209,9 +208,8 @@ static int i2o_cfg_parms(unsigned long arg, unsigned int type)
 		return -EAGAIN;
 	}
 
-	if (put_user(len, kcmd.reslen))
-		ret = -EFAULT;
-	else if (len > reslen)
+	put_user(len, kcmd.reslen);
+	if (len > reslen)
 		ret = -ENOBUFS;
 	else if (copy_to_user(kcmd.resbuf, res, len))
 		ret = -EFAULT;

@@ -239,7 +239,6 @@ struct myri10ge_priv {
 	int watchdog_resets;
 	int watchdog_pause;
 	int pause;
-	bool fw_name_allocated;
 	char *fw_name;
 	char eeprom_strings[MYRI10GE_EEPROM_STRINGS_SIZE];
 	char *product_code_string;
@@ -272,7 +271,6 @@ MODULE_FIRMWARE("myri10ge_eth_z8e.dat");
 MODULE_FIRMWARE("myri10ge_rss_ethp_z8e.dat");
 MODULE_FIRMWARE("myri10ge_rss_eth_z8e.dat");
 
-/* Careful: must be accessed under kparam_block_sysfs_write */
 static char *myri10ge_fw_name = NULL;
 module_param(myri10ge_fw_name, charp, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(myri10ge_fw_name, "Firmware image name");
@@ -377,14 +375,6 @@ static inline void put_be32(__be32 val, __be32 __iomem * p)
 }
 
 static struct net_device_stats *myri10ge_get_stats(struct net_device *dev);
-
-static void set_fw_name(struct myri10ge_priv *mgp, char *name, bool allocated)
-{
-	if (mgp->fw_name_allocated)
-		kfree(mgp->fw_name);
-	mgp->fw_name = name;
-	mgp->fw_name_allocated = allocated;
-}
 
 static int
 myri10ge_send_cmd(struct myri10ge_priv *mgp, u32 cmd,
@@ -757,7 +747,7 @@ static int myri10ge_load_firmware(struct myri10ge_priv *mgp, int adopt)
 			dev_warn(&mgp->pdev->dev, "via hotplug\n");
 		}
 
-		set_fw_name(mgp, "adopted", false);
+		mgp->fw_name = "adopted";
 		mgp->tx_boundary = 2048;
 		myri10ge_dummy_rdma(mgp, 1);
 		status = myri10ge_get_firmware_capabilities(mgp);
@@ -1740,7 +1730,8 @@ static int myri10ge_set_rx_csum(struct net_device *netdev, u32 csum_enabled)
 	if (csum_enabled)
 		mgp->csum_flag = MXGEFW_FLAGS_CKSUM;
 	else {
-		netdev->features &= ~NETIF_F_LRO;
+		u32 flags = ethtool_op_get_flags(netdev);
+		err = ethtool_op_set_flags(netdev, (flags & ~ETH_FLAG_LRO));
 		mgp->csum_flag = 0;
 
 	}
@@ -1909,11 +1900,6 @@ static u32 myri10ge_get_msglevel(struct net_device *netdev)
 	return mgp->msg_enable;
 }
 
-static int myri10ge_set_flags(struct net_device *netdev, u32 value)
-{
-	return ethtool_op_set_flags(netdev, value, ETH_FLAG_LRO);
-}
-
 static const struct ethtool_ops myri10ge_ethtool_ops = {
 	.get_settings = myri10ge_get_settings,
 	.get_drvinfo = myri10ge_get_drvinfo,
@@ -1934,7 +1920,7 @@ static const struct ethtool_ops myri10ge_ethtool_ops = {
 	.set_msglevel = myri10ge_set_msglevel,
 	.get_msglevel = myri10ge_get_msglevel,
 	.get_flags = ethtool_op_get_flags,
-	.set_flags = myri10ge_set_flags
+	.set_flags = ethtool_op_set_flags
 };
 
 static int myri10ge_allocate_rings(struct myri10ge_slice_state *ss)
@@ -3243,7 +3229,7 @@ static void myri10ge_firmware_probe(struct myri10ge_priv *mgp)
 	 * load the optimized firmware (which assumes aligned PCIe
 	 * completions) in order to see if it works on this host.
 	 */
-	set_fw_name(mgp, myri10ge_fw_aligned, false);
+	mgp->fw_name = myri10ge_fw_aligned;
 	status = myri10ge_load_firmware(mgp, 1);
 	if (status != 0) {
 		goto abort;
@@ -3271,7 +3257,7 @@ static void myri10ge_firmware_probe(struct myri10ge_priv *mgp)
 abort:
 	/* fall back to using the unaligned firmware */
 	mgp->tx_boundary = 2048;
-	set_fw_name(mgp, myri10ge_fw_unaligned, false);
+	mgp->fw_name = myri10ge_fw_unaligned;
 
 }
 
@@ -3294,7 +3280,7 @@ static void myri10ge_select_firmware(struct myri10ge_priv *mgp)
 			dev_info(&mgp->pdev->dev, "PCIE x%d Link\n",
 				 link_width);
 			mgp->tx_boundary = 4096;
-			set_fw_name(mgp, myri10ge_fw_aligned, false);
+			mgp->fw_name = myri10ge_fw_aligned;
 		} else {
 			myri10ge_firmware_probe(mgp);
 		}
@@ -3303,29 +3289,22 @@ static void myri10ge_select_firmware(struct myri10ge_priv *mgp)
 			dev_info(&mgp->pdev->dev,
 				 "Assuming aligned completions (forced)\n");
 			mgp->tx_boundary = 4096;
-			set_fw_name(mgp, myri10ge_fw_aligned, false);
+			mgp->fw_name = myri10ge_fw_aligned;
 		} else {
 			dev_info(&mgp->pdev->dev,
 				 "Assuming unaligned completions (forced)\n");
 			mgp->tx_boundary = 2048;
-			set_fw_name(mgp, myri10ge_fw_unaligned, false);
+			mgp->fw_name = myri10ge_fw_unaligned;
 		}
 	}
-
-	kparam_block_sysfs_write(myri10ge_fw_name);
 	if (myri10ge_fw_name != NULL) {
-		char *fw_name = kstrdup(myri10ge_fw_name, GFP_KERNEL);
-		if (fw_name) {
-			overridden = 1;
-			set_fw_name(mgp, fw_name, true);
-		}
+		overridden = 1;
+		mgp->fw_name = myri10ge_fw_name;
 	}
-	kparam_unblock_sysfs_write(myri10ge_fw_name);
-
 	if (mgp->board_number < MYRI10GE_MAX_BOARDS &&
 	    myri10ge_fw_names[mgp->board_number] != NULL &&
 	    strlen(myri10ge_fw_names[mgp->board_number])) {
-		set_fw_name(mgp, myri10ge_fw_names[mgp->board_number], false);
+		mgp->fw_name = myri10ge_fw_names[mgp->board_number];
 		overridden = 1;
 	}
 	if (overridden)
@@ -3677,7 +3656,6 @@ static void myri10ge_probe_slices(struct myri10ge_priv *mgp)
 	struct myri10ge_cmd cmd;
 	struct pci_dev *pdev = mgp->pdev;
 	char *old_fw;
-	bool old_allocated;
 	int i, status, ncpus, msix_cap;
 
 	mgp->num_slices = 1;
@@ -3690,23 +3668,17 @@ static void myri10ge_probe_slices(struct myri10ge_priv *mgp)
 
 	/* try to load the slice aware rss firmware */
 	old_fw = mgp->fw_name;
-	old_allocated = mgp->fw_name_allocated;
-	/* don't free old_fw if we override it. */
-	mgp->fw_name_allocated = false;
-
 	if (myri10ge_fw_name != NULL) {
 		dev_info(&mgp->pdev->dev, "overriding rss firmware to %s\n",
 			 myri10ge_fw_name);
-		set_fw_name(mgp, myri10ge_fw_name, false);
+		mgp->fw_name = myri10ge_fw_name;
 	} else if (old_fw == myri10ge_fw_aligned)
-		set_fw_name(mgp, myri10ge_fw_rss_aligned, false);
+		mgp->fw_name = myri10ge_fw_rss_aligned;
 	else
-		set_fw_name(mgp, myri10ge_fw_rss_unaligned, false);
+		mgp->fw_name = myri10ge_fw_rss_unaligned;
 	status = myri10ge_load_firmware(mgp, 0);
 	if (status != 0) {
 		dev_info(&pdev->dev, "Rss firmware not found\n");
-		if (old_allocated)
-			kfree(old_fw);
 		return;
 	}
 
@@ -3771,8 +3743,6 @@ static void myri10ge_probe_slices(struct myri10ge_priv *mgp)
 					 mgp->num_slices);
 		if (status == 0) {
 			pci_disable_msix(pdev);
-			if (old_allocated)
-				kfree(old_fw);
 			return;
 		}
 		if (status > 0)
@@ -3789,7 +3759,7 @@ disable_msix:
 
 abort_with_fw:
 	mgp->num_slices = 1;
-	set_fw_name(mgp, old_fw, old_allocated);
+	mgp->fw_name = old_fw;
 	myri10ge_load_firmware(mgp, 0);
 }
 
@@ -4019,7 +3989,6 @@ abort_with_enabled:
 	pci_disable_device(pdev);
 
 abort_with_netdev:
-	set_fw_name(mgp, NULL, false);
 	free_netdev(netdev);
 	return status;
 }
@@ -4064,7 +4033,6 @@ static void myri10ge_remove(struct pci_dev *pdev)
 	dma_free_coherent(&pdev->dev, sizeof(*mgp->cmd),
 			  mgp->cmd, mgp->cmd_bus);
 
-	set_fw_name(mgp, NULL, false);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
 	pci_set_drvdata(pdev, NULL);

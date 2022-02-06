@@ -67,7 +67,6 @@ static int __init init_vdso_vars(void)
 	*(typeof(__ ## x) **) var_ref(VDSO64_SYMBOL(vbase, x), #x) = &__ ## x;
 #include "vextern.h"
 #undef VEXTERN
-	vunmap(vbase);
 	return 0;
 
  oom:
@@ -75,7 +74,7 @@ static int __init init_vdso_vars(void)
 	vdso_enabled = 0;
 	return -ENOMEM;
 }
-subsys_initcall(init_vdso_vars);
+__initcall(init_vdso_vars);
 
 struct linux_binprm;
 

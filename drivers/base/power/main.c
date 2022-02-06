@@ -26,6 +26,7 @@
 #include <linux/interrupt.h>
 #include <linux/sched.h>
 #include <linux/async.h>
+#include <linux/timer.h>
 
 #include "../base.h"
 #include "power.h"
@@ -45,6 +46,9 @@ LIST_HEAD(dpm_list);
 static DEFINE_MUTEX(dpm_list_mtx);
 static pm_message_t pm_transition;
 
+static void dpm_drv_timeout(unsigned long data);
+static DEFINE_TIMER(dpm_drv_wd, dpm_drv_timeout, 0, 0);
+
 /*
  * Set once the preparation of devices for a PM transition has started, reset
  * before starting to resume devices.  Protected by dpm_list_mtx.
@@ -59,7 +63,7 @@ void device_pm_init(struct device *dev)
 {
 	dev->power.status = DPM_ON;
 	init_completion(&dev->power.completion);
-	dev->power.wakeup_count = 0;
+	complete_all(&dev->power.completion);
 	pm_runtime_init(dev);
 }
 
@@ -523,7 +527,8 @@ static int device_resume(struct device *dev, pm_message_t state, bool async)
 	TRACE_DEVICE(dev);
 	TRACE_RESUME(0);
 
-	dpm_wait(dev->parent, async);
+	if (dev->parent && dev->parent->power.status >= DPM_OFF)
+		dpm_wait(dev->parent, async);
 	device_lock(dev);
 
 	dev->power.status = DPM_RESUMING;
@@ -584,6 +589,45 @@ static bool is_async(struct device *dev)
 }
 
 /**
+ *	dpm_drv_timeout - Driver suspend / resume watchdog handler
+ *	@data: struct device which timed out
+ *
+ * 	Called when a driver has timed out suspending or resuming.
+ * 	There's not much we can do here to recover so
+ * 	BUG() out for a crash-dump
+ *
+ */
+static void dpm_drv_timeout(unsigned long data)
+{
+	struct device *dev = (struct device *) data;
+
+	printk(KERN_EMERG "**** DPM device timeout: %s (%s)\n", dev_name(dev),
+	       (dev->driver ? dev->driver->name : "no driver"));
+	BUG();
+}
+
+/**
+ *	dpm_drv_wdset - Sets up driver suspend/resume watchdog timer.
+ *	@dev: struct device which we're guarding.
+ *
+ */
+static void dpm_drv_wdset(struct device *dev)
+{
+	dpm_drv_wd.data = (unsigned long) dev;
+	mod_timer(&dpm_drv_wd, jiffies + (HZ * 3));
+}
+
+/**
+ *	dpm_drv_wdclr - clears driver suspend/resume watchdog timer.
+ *	@dev: struct device which we're no longer guarding.
+ *
+ */
+static void dpm_drv_wdclr(struct device *dev)
+{
+	del_timer_sync(&dpm_drv_wd);
+}
+
+/**
  * dpm_resume - Execute "resume" callbacks for non-sysdev devices.
  * @state: PM transition of the system being carried out.
  *
@@ -601,6 +645,10 @@ static void dpm_resume(pm_message_t state)
 	pm_transition = state;
 
 	list_for_each_entry(dev, &dpm_list, power.entry) {
+		if (dev->init_name)
+			printk("r: %s: ", dev->init_name);
+		if (dev->driver && dev->driver->name)
+			printk("dr: %s", dev->driver->name);
 		if (dev->power.status < DPM_OFF)
 			continue;
 
@@ -616,7 +664,10 @@ static void dpm_resume(pm_message_t state)
 		get_device(dev);
 		if (dev->power.status >= DPM_OFF && !is_async(dev)) {
 			int error;
-
+			if (dev->init_name)
+				printk("r: %s: ", dev->init_name);
+			if (dev->driver && dev->driver->name)
+				printk("dr: %s", dev->driver->name);
 			mutex_unlock(&dpm_list_mtx);
 
 			error = device_resume(dev, state, false);
@@ -790,6 +841,10 @@ int dpm_suspend_noirq(pm_message_t state)
 	suspend_device_irqs();
 	mutex_lock(&dpm_list_mtx);
 	list_for_each_entry_reverse(dev, &dpm_list, power.entry) {
+		if (dev->init_name)
+			printk("s: %s: ", dev->init_name);
+		if (dev->driver && dev->driver->name)
+			printk("dr: %s", dev->driver->name);
 		error = device_suspend_noirq(dev, state);
 		if (error) {
 			pm_dev_err(dev, state, " late", error);
@@ -931,10 +986,17 @@ static int dpm_suspend(pm_message_t state)
 	while (!list_empty(&dpm_list)) {
 		struct device *dev = to_device(dpm_list.prev);
 
+		if (dev->init_name)
+			printk("s: %s: ", dev->init_name);
+		if (dev->driver && dev->driver->name)
+			printk("dr: %s", dev->driver->name);
+		
 		get_device(dev);
 		mutex_unlock(&dpm_list_mtx);
 
+		dpm_drv_wdset(dev);
 		error = device_suspend(dev);
+		dpm_drv_wdclr(dev);
 
 		mutex_lock(&dpm_list_mtx);
 		if (error) {

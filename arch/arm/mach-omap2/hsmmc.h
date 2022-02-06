@@ -6,8 +6,6 @@
  * published by the Free Software Foundation.
  */
 
-struct mmc_card;
-
 struct omap2_hsmmc_info {
 	u8	mmc;		/* controller 1/2/3 */
 	u8	wires;		/* 1/4/8 wires */
@@ -25,8 +23,6 @@ struct omap2_hsmmc_info {
 	int	ocr_mask;	/* temporary HACK */
 	/* Remux (pad configuation) when powering on/off */
 	void (*remux)(struct device *dev, int slot, int power_on);
-	/* init some special card */
-	void (*init_card)(struct mmc_card *card);
 };
 
 #if defined(CONFIG_MMC_OMAP_HS) || defined(CONFIG_MMC_OMAP_HS_MODULE)

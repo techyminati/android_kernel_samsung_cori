@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2000-2003,2005 Silicon Graphics, Inc.
- * Copyright (C) 2010 Red Hat, Inc.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -25,12 +24,16 @@
 #include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
+#include "xfs_dir2.h"
+#include "xfs_dmapi.h"
 #include "xfs_mount.h"
 #include "xfs_error.h"
 #include "xfs_da_btree.h"
 #include "xfs_bmap_btree.h"
 #include "xfs_alloc_btree.h"
 #include "xfs_ialloc_btree.h"
+#include "xfs_dir2_sf.h"
+#include "xfs_attr_sf.h"
 #include "xfs_dinode.h"
 #include "xfs_inode.h"
 #include "xfs_btree.h"
@@ -44,7 +47,6 @@
 #include "xfs_trace.h"
 
 kmem_zone_t	*xfs_trans_zone;
-kmem_zone_t	*xfs_log_item_desc_zone;
 
 
 /*
@@ -595,7 +597,8 @@ _xfs_trans_alloc(
 	tp->t_magic = XFS_TRANS_MAGIC;
 	tp->t_type = type;
 	tp->t_mountp = mp;
-	INIT_LIST_HEAD(&tp->t_items);
+	tp->t_items_free = XFS_LIC_NUM_SLOTS;
+	xfs_lic_init(&(tp->t_items));
 	INIT_LIST_HEAD(&tp->t_busy);
 	return tp;
 }
@@ -640,7 +643,8 @@ xfs_trans_dup(
 	ntp->t_magic = XFS_TRANS_MAGIC;
 	ntp->t_type = tp->t_type;
 	ntp->t_mountp = tp->t_mountp;
-	INIT_LIST_HEAD(&ntp->t_items);
+	ntp->t_items_free = XFS_LIC_NUM_SLOTS;
+	xfs_lic_init(&(ntp->t_items));
 	INIT_LIST_HEAD(&ntp->t_busy);
 
 	ASSERT(tp->t_flags & XFS_TRANS_PERM_LOG_RES);
@@ -1120,108 +1124,6 @@ xfs_trans_unreserve_and_mod_sb(
 }
 
 /*
- * Add the given log item to the transaction's list of log items.
- *
- * The log item will now point to its new descriptor with its li_desc field.
- */
-void
-xfs_trans_add_item(
-	struct xfs_trans	*tp,
-	struct xfs_log_item	*lip)
-{
-	struct xfs_log_item_desc *lidp;
-
-	ASSERT(lip->li_mountp = tp->t_mountp);
-	ASSERT(lip->li_ailp = tp->t_mountp->m_ail);
-
-	lidp = kmem_zone_zalloc(xfs_log_item_desc_zone, KM_SLEEP | KM_NOFS);
-
-	lidp->lid_item = lip;
-	lidp->lid_flags = 0;
-	lidp->lid_size = 0;
-	list_add_tail(&lidp->lid_trans, &tp->t_items);
-
-	lip->li_desc = lidp;
-}
-
-STATIC void
-xfs_trans_free_item_desc(
-	struct xfs_log_item_desc *lidp)
-{
-	list_del_init(&lidp->lid_trans);
-	kmem_zone_free(xfs_log_item_desc_zone, lidp);
-}
-
-/*
- * Unlink and free the given descriptor.
- */
-void
-xfs_trans_del_item(
-	struct xfs_log_item	*lip)
-{
-	xfs_trans_free_item_desc(lip->li_desc);
-	lip->li_desc = NULL;
-}
-
-/*
- * Unlock all of the items of a transaction and free all the descriptors
- * of that transaction.
- */
-STATIC void
-xfs_trans_free_items(
-	struct xfs_trans	*tp,
-	xfs_lsn_t		commit_lsn,
-	int			flags)
-{
-	struct xfs_log_item_desc *lidp, *next;
-
-	list_for_each_entry_safe(lidp, next, &tp->t_items, lid_trans) {
-		struct xfs_log_item	*lip = lidp->lid_item;
-
-		lip->li_desc = NULL;
-
-		if (commit_lsn != NULLCOMMITLSN)
-			IOP_COMMITTING(lip, commit_lsn);
-		if (flags & XFS_TRANS_ABORT)
-			lip->li_flags |= XFS_LI_ABORTED;
-		IOP_UNLOCK(lip);
-
-		xfs_trans_free_item_desc(lidp);
-	}
-}
-
-/*
- * Unlock the items associated with a transaction.
- *
- * Items which were not logged should be freed.  Those which were logged must
- * still be tracked so they can be unpinned when the transaction commits.
- */
-STATIC void
-xfs_trans_unlock_items(
-	struct xfs_trans	*tp,
-	xfs_lsn_t		commit_lsn)
-{
-	struct xfs_log_item_desc *lidp, *next;
-
-	list_for_each_entry_safe(lidp, next, &tp->t_items, lid_trans) {
-		struct xfs_log_item	*lip = lidp->lid_item;
-
-		lip->li_desc = NULL;
-
-		if (commit_lsn != NULLCOMMITLSN)
-			IOP_COMMITTING(lip, commit_lsn);
-		IOP_UNLOCK(lip);
-
-		/*
-		 * Free the descriptor if the item is not dirty
-		 * within this transaction.
-		 */
-		if (!(lidp->lid_flags & XFS_LID_DIRTY))
-			xfs_trans_free_item_desc(lidp);
-	}
-}
-
-/*
  * Total up the number of log iovecs needed to commit this
  * transaction.  The transaction itself needs one for the
  * transaction header.  Ask each dirty item in turn how many
@@ -1232,27 +1134,30 @@ xfs_trans_count_vecs(
 	struct xfs_trans	*tp)
 {
 	int			nvecs;
-	struct xfs_log_item_desc *lidp;
+	xfs_log_item_desc_t	*lidp;
 
 	nvecs = 1;
+	lidp = xfs_trans_first_item(tp);
+	ASSERT(lidp != NULL);
 
 	/* In the non-debug case we need to start bailing out if we
 	 * didn't find a log_item here, return zero and let trans_commit
 	 * deal with it.
 	 */
-	if (list_empty(&tp->t_items)) {
-		ASSERT(0);
+	if (lidp == NULL)
 		return 0;
-	}
 
-	list_for_each_entry(lidp, &tp->t_items, lid_trans) {
+	while (lidp != NULL) {
 		/*
 		 * Skip items which aren't dirty in this transaction.
 		 */
-		if (!(lidp->lid_flags & XFS_LID_DIRTY))
+		if (!(lidp->lid_flags & XFS_LID_DIRTY)) {
+			lidp = xfs_trans_next_item(tp, lidp);
 			continue;
+		}
 		lidp->lid_size = IOP_SIZE(lidp->lid_item);
 		nvecs += lidp->lid_size;
+		lidp = xfs_trans_next_item(tp, lidp);
 	}
 
 	return nvecs;
@@ -1272,7 +1177,7 @@ xfs_trans_fill_vecs(
 	struct xfs_trans	*tp,
 	struct xfs_log_iovec	*log_vector)
 {
-	struct xfs_log_item_desc *lidp;
+	xfs_log_item_desc_t	*lidp;
 	struct xfs_log_iovec	*vecp;
 	uint			nitems;
 
@@ -1283,11 +1188,14 @@ xfs_trans_fill_vecs(
 	vecp = log_vector + 1;
 
 	nitems = 0;
-	ASSERT(!list_empty(&tp->t_items));
-	list_for_each_entry(lidp, &tp->t_items, lid_trans) {
+	lidp = xfs_trans_first_item(tp);
+	ASSERT(lidp);
+	while (lidp) {
 		/* Skip items which aren't dirty in this transaction. */
-		if (!(lidp->lid_flags & XFS_LID_DIRTY))
+		if (!(lidp->lid_flags & XFS_LID_DIRTY)) {
+			lidp = xfs_trans_next_item(tp, lidp);
 			continue;
+		}
 
 		/*
 		 * The item may be marked dirty but not log anything.  This can
@@ -1298,6 +1206,7 @@ xfs_trans_fill_vecs(
 		IOP_FORMAT(lidp->lid_item, vecp);
 		vecp += lidp->lid_size;
 		IOP_PIN(lidp->lid_item);
+		lidp = xfs_trans_next_item(tp, lidp);
 	}
 
 	/*
@@ -1375,7 +1284,7 @@ xfs_trans_item_committed(
 	 * log item flags, if anyone else stales the buffer we do not want to
 	 * pay any attention to it.
 	 */
-	IOP_UNPIN(lip, 0);
+	IOP_UNPIN(lip);
 }
 
 /*
@@ -1392,15 +1301,24 @@ xfs_trans_committed(
 	struct xfs_trans	*tp,
 	int			abortflag)
 {
-	struct xfs_log_item_desc *lidp, *next;
+	xfs_log_item_desc_t	*lidp;
+	xfs_log_item_chunk_t	*licp;
+	xfs_log_item_chunk_t	*next_licp;
 
 	/* Call the transaction's completion callback if there is one. */
 	if (tp->t_callback != NULL)
 		tp->t_callback(tp, tp->t_callarg);
 
-	list_for_each_entry_safe(lidp, next, &tp->t_items, lid_trans) {
+	for (lidp = xfs_trans_first_item(tp);
+	     lidp != NULL;
+	     lidp = xfs_trans_next_item(tp, lidp)) {
 		xfs_trans_item_committed(lidp->lid_item, tp->t_lsn, abortflag);
-		xfs_trans_free_item_desc(lidp);
+	}
+
+	/* free the item chunks, ignoring the embedded chunk */
+	for (licp = tp->t_items.lic_next; licp != NULL; licp = next_licp) {
+		next_licp = licp->lic_next;
+		kmem_free(licp);
 	}
 
 	xfs_trans_free(tp);
@@ -1415,14 +1333,16 @@ xfs_trans_uncommit(
 	struct xfs_trans	*tp,
 	uint			flags)
 {
-	struct xfs_log_item_desc *lidp;
+	xfs_log_item_desc_t	*lidp;
 
-	list_for_each_entry(lidp, &tp->t_items, lid_trans) {
+	for (lidp = xfs_trans_first_item(tp);
+	     lidp != NULL;
+	     lidp = xfs_trans_next_item(tp, lidp)) {
 		/*
 		 * Unpin all but those that aren't dirty.
 		 */
 		if (lidp->lid_flags & XFS_LID_DIRTY)
-			IOP_UNPIN(lidp->lid_item, 1);
+			IOP_UNPIN_REMOVE(lidp->lid_item, tp);
 	}
 
 	xfs_trans_unreserve_and_mod_sb(tp);
@@ -1588,28 +1508,33 @@ STATIC struct xfs_log_vec *
 xfs_trans_alloc_log_vecs(
 	xfs_trans_t	*tp)
 {
-	struct xfs_log_item_desc *lidp;
+	xfs_log_item_desc_t	*lidp;
 	struct xfs_log_vec	*lv = NULL;
 	struct xfs_log_vec	*ret_lv = NULL;
 
+	lidp = xfs_trans_first_item(tp);
 
 	/* Bail out if we didn't find a log item.  */
-	if (list_empty(&tp->t_items)) {
+	if (!lidp) {
 		ASSERT(0);
 		return NULL;
 	}
 
-	list_for_each_entry(lidp, &tp->t_items, lid_trans) {
+	while (lidp != NULL) {
 		struct xfs_log_vec *new_lv;
 
 		/* Skip items which aren't dirty in this transaction. */
-		if (!(lidp->lid_flags & XFS_LID_DIRTY))
+		if (!(lidp->lid_flags & XFS_LID_DIRTY)) {
+			lidp = xfs_trans_next_item(tp, lidp);
 			continue;
+		}
 
 		/* Skip items that do not have any vectors for writing */
 		lidp->lid_size = IOP_SIZE(lidp->lid_item);
-		if (!lidp->lid_size)
+		if (!lidp->lid_size) {
+			lidp = xfs_trans_next_item(tp, lidp);
 			continue;
+		}
 
 		new_lv = kmem_zalloc(sizeof(*new_lv) +
 				lidp->lid_size * sizeof(struct xfs_log_iovec),
@@ -1624,6 +1549,7 @@ xfs_trans_alloc_log_vecs(
 		else
 			lv->lv_next = new_lv;
 		lv = new_lv;
+		lidp = xfs_trans_next_item(tp, lidp);
 	}
 
 	return ret_lv;
@@ -1782,6 +1708,12 @@ xfs_trans_cancel(
 	int			flags)
 {
 	int			log_flags;
+#ifdef DEBUG
+	xfs_log_item_chunk_t	*licp;
+	xfs_log_item_desc_t	*lidp;
+	xfs_log_item_t		*lip;
+	int			i;
+#endif
 	xfs_mount_t		*mp = tp->t_mountp;
 
 	/*
@@ -1800,11 +1732,21 @@ xfs_trans_cancel(
 		xfs_force_shutdown(mp, SHUTDOWN_CORRUPT_INCORE);
 	}
 #ifdef DEBUG
-	if (!(flags & XFS_TRANS_ABORT) && !XFS_FORCED_SHUTDOWN(mp)) {
-		struct xfs_log_item_desc *lidp;
+	if (!(flags & XFS_TRANS_ABORT)) {
+		licp = &(tp->t_items);
+		while (licp != NULL) {
+			lidp = licp->lic_descs;
+			for (i = 0; i < licp->lic_unused; i++, lidp++) {
+				if (xfs_lic_isfree(licp, i)) {
+					continue;
+				}
 
-		list_for_each_entry(lidp, &tp->t_items, lid_trans)
-			ASSERT(!(lidp->lid_item->li_type == XFS_LI_EFD));
+				lip = lidp->lid_item;
+				if (!XFS_FORCED_SHUTDOWN(mp))
+					ASSERT(!(lip->li_type == XFS_LI_EFD));
+			}
+			licp = licp->lic_next;
+		}
 	}
 #endif
 	xfs_trans_unreserve_and_mod_sb(tp);
@@ -1892,6 +1834,7 @@ xfs_trans_roll(
 	if (error)
 		return error;
 
-	xfs_trans_ijoin(trans, dp);
+	xfs_trans_ijoin(trans, dp, XFS_ILOCK_EXCL);
+	xfs_trans_ihold(trans, dp);
 	return 0;
 }

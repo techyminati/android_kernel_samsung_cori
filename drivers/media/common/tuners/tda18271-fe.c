@@ -1249,7 +1249,7 @@ struct dvb_frontend *tda18271_attach(struct dvb_frontend *fe, u8 addr,
 				     struct tda18271_config *cfg)
 {
 	struct tda18271_priv *priv = NULL;
-	int instance, ret;
+	int instance;
 
 	mutex_lock(&tda18271_list_mutex);
 
@@ -1268,12 +1268,10 @@ struct dvb_frontend *tda18271_attach(struct dvb_frontend *fe, u8 addr,
 		priv->cal_initialized = false;
 		mutex_init(&priv->lock);
 
-		ret = tda18271_get_id(fe);
-		if (tda_fail(ret))
+		if (tda_fail(tda18271_get_id(fe)))
 			goto fail;
 
-		ret = tda18271_assign_map_layout(fe);
-		if (tda_fail(ret))
+		if (tda_fail(tda18271_assign_map_layout(fe)))
 			goto fail;
 
 		mutex_lock(&priv->lock);

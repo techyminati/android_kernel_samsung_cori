@@ -47,11 +47,9 @@ static void board_reset(char *c)
 
 static void board_power_off(void)
 {
+	printk(KERN_ALERT "It's now safe to remove power\n");
 	while (1)
-		asm volatile (
-		"	.set	mips32					\n"
-		"	wait						\n"
-		"	.set	mips0					\n");
+		asm volatile (".set mips3 ; wait ; .set mips1");
 }
 
 void __init board_setup(void)

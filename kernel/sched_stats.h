@@ -295,7 +295,13 @@ sched_info_switch(struct task_struct *prev, struct task_struct *next)
 static inline void account_group_user_time(struct task_struct *tsk,
 					   cputime_t cputime)
 {
-	struct thread_group_cputimer *cputimer = &tsk->signal->cputimer;
+	struct thread_group_cputimer *cputimer;
+
+	/* tsk == current, ensure it is safe to use ->signal */
+	if (unlikely(tsk->exit_state))
+		return;
+
+	cputimer = &tsk->signal->cputimer;
 
 	if (!cputimer->running)
 		return;
@@ -319,7 +325,13 @@ static inline void account_group_user_time(struct task_struct *tsk,
 static inline void account_group_system_time(struct task_struct *tsk,
 					     cputime_t cputime)
 {
-	struct thread_group_cputimer *cputimer = &tsk->signal->cputimer;
+	struct thread_group_cputimer *cputimer;
+
+	/* tsk == current, ensure it is safe to use ->signal */
+	if (unlikely(tsk->exit_state))
+		return;
+
+	cputimer = &tsk->signal->cputimer;
 
 	if (!cputimer->running)
 		return;
@@ -343,7 +355,16 @@ static inline void account_group_system_time(struct task_struct *tsk,
 static inline void account_group_exec_runtime(struct task_struct *tsk,
 					      unsigned long long ns)
 {
-	struct thread_group_cputimer *cputimer = &tsk->signal->cputimer;
+	struct thread_group_cputimer *cputimer;
+	struct signal_struct *sig;
+
+	sig = tsk->signal;
+	/* see __exit_signal()->task_rq_unlock_wait() */
+	barrier();
+	if (unlikely(!sig))
+		return;
+
+	cputimer = &sig->cputimer;
 
 	if (!cputimer->running)
 		return;

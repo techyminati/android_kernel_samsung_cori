@@ -482,8 +482,7 @@ static int wm8523_register(struct wm8523_priv *wm8523,
 
 	if (wm8523_codec) {
 		dev_err(codec->dev, "Another WM8523 is registered\n");
-		ret = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
 	mutex_init(&codec->mutex);
@@ -571,19 +570,18 @@ static int wm8523_register(struct wm8523_priv *wm8523,
 	ret = snd_soc_register_codec(codec);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to register codec: %d\n", ret);
-		goto err_enable;
+		return ret;
 	}
 
 	ret = snd_soc_register_dai(&wm8523_dai);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to register DAI: %d\n", ret);
-		goto err_codec;
+		snd_soc_unregister_codec(codec);
+		return ret;
 	}
 
 	return 0;
 
-err_codec:
-	snd_soc_unregister_codec(codec);
 err_enable:
 	regulator_bulk_disable(ARRAY_SIZE(wm8523->supplies), wm8523->supplies);
 err_get:

@@ -15,7 +15,6 @@ struct nlm_host;
 struct nfs4_sequence_args;
 struct nfs4_sequence_res;
 struct nfs_server;
-struct nfs4_minor_version_ops;
 
 /*
  * The nfs_client identifies our client state to the server.
@@ -71,7 +70,11 @@ struct nfs_client {
 	 */
 	char			cl_ipaddr[48];
 	unsigned char		cl_id_uniquifier;
-	const struct nfs4_minor_version_ops *cl_mvops;
+	int		     (* cl_call_sync)(struct nfs_server *server,
+					      struct rpc_message *msg,
+					      struct nfs4_sequence_args *args,
+					      struct nfs4_sequence_res *res,
+					      int cache_reply);
 #endif /* CONFIG_NFS_V4 */
 
 #ifdef CONFIG_NFS_V4_1

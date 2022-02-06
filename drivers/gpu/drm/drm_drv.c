@@ -243,20 +243,47 @@ int drm_lastclose(struct drm_device * dev)
  *
  * Initializes an array of drm_device structures, and attempts to
  * initialize all available devices, using consecutive minors, registering the
- * stubs and initializing the device.
+ * stubs and initializing the AGP device.
  *
  * Expands the \c DRIVER_PREINIT and \c DRIVER_POST_INIT macros before and
  * after the initialization for driver customization.
  */
 int drm_init(struct drm_driver *driver)
 {
+	struct pci_dev *pdev = NULL;
+	const struct pci_device_id *pid;
+	int i;
+
 	DRM_DEBUG("\n");
+
 	INIT_LIST_HEAD(&driver->device_list);
 
-	if (driver->driver_features & DRIVER_USE_PLATFORM_DEVICE)
-		return drm_platform_init(driver);
-	else
-		return drm_pci_init(driver);
+	if (driver->driver_features & DRIVER_MODESET)
+		return pci_register_driver(&driver->pci_driver);
+
+	/* If not using KMS, fall back to stealth mode manual scanning. */
+	for (i = 0; driver->pci_driver.id_table[i].vendor != 0; i++) {
+		pid = &driver->pci_driver.id_table[i];
+
+		/* Loop around setting up a DRM device for each PCI device
+		 * matching our ID and device class.  If we had the internal
+		 * function that pci_get_subsys and pci_get_class used, we'd
+		 * be able to just pass pid in instead of doing a two-stage
+		 * thing.
+		 */
+		pdev = NULL;
+		while ((pdev =
+			pci_get_subsys(pid->vendor, pid->device, pid->subvendor,
+				       pid->subdevice, pdev)) != NULL) {
+			if ((pdev->class & pid->class_mask) != pid->class)
+				continue;
+
+			/* stealth mode requires a manual probe */
+			pci_dev_get(pdev);
+			drm_get_dev(pdev, pid, driver);
+		}
+	}
+	return 0;
 }
 
 EXPORT_SYMBOL(drm_init);
@@ -288,7 +315,6 @@ static int __init drm_core_init(void)
 {
 	int ret = -ENOMEM;
 
-	drm_global_init();
 	idr_init(&drm_minors_idr);
 
 	if (register_chrdev(DRM_MAJOR, "drm", &drm_stub_fops))
@@ -336,7 +362,6 @@ static void __exit drm_core_exit(void)
 
 	unregister_chrdev(DRM_MAJOR, "drm");
 
-	idr_remove_all(&drm_minors_idr);
 	idr_destroy(&drm_minors_idr);
 }
 
@@ -477,13 +502,15 @@ long drm_ioctl(struct file *filp,
 				retcode = -EFAULT;
 				goto err_i1;
 			}
-		}
+		} else
+			memset(kdata, 0, _IOC_SIZE(cmd));
+
 		if (ioctl->flags & DRM_UNLOCKED)
 			retcode = func(dev, kdata, file_priv);
 		else {
-			mutex_lock(&drm_global_mutex);
+			lock_kernel();
 			retcode = func(dev, kdata, file_priv);
-			mutex_unlock(&drm_global_mutex);
+			unlock_kernel();
 		}
 
 		if (cmd & IOC_OUT) {

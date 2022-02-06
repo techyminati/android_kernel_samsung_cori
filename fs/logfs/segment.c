@@ -929,4 +929,5 @@ void logfs_cleanup_areas(struct super_block *sb)
 	for_each_area(i)
 		free_area(super->s_area[i]);
 	free_area(super->s_journal_area);
+	destroy_meta_inode(super->s_mapping_inode);
 }

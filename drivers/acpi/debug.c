@@ -96,8 +96,7 @@ static const struct acpi_dlevel acpi_debug_levels[] = {
 /* --------------------------------------------------------------------------
                               FS Interface (/sys)
    -------------------------------------------------------------------------- */
-static int param_get_debug_layer(char *buffer, const struct kernel_param *kp)
-{
+static int param_get_debug_layer(char *buffer, struct kernel_param *kp) {
 	int result = 0;
 	int i;
 
@@ -119,8 +118,7 @@ static int param_get_debug_layer(char *buffer, const struct kernel_param *kp)
 	return result;
 }
 
-static int param_get_debug_level(char *buffer, const struct kernel_param *kp)
-{
+static int param_get_debug_level(char *buffer, struct kernel_param *kp) {
 	int result = 0;
 	int i;
 
@@ -139,18 +137,8 @@ static int param_get_debug_level(char *buffer, const struct kernel_param *kp)
 	return result;
 }
 
-static struct kernel_param_ops acpi_debug_layer_ops = {
-	.set = param_set_uint,
-	.get = param_get_debug_layer,
-};
-
-static struct kernel_param_ops acpi_debug_level_ops = {
-	.set = param_set_uint,
-	.get = param_get_debug_level,
-};
-
-module_param_cb(debug_layer, &acpi_debug_layer_ops, &acpi_dbg_layer, 0644);
-module_param_cb(debug_level, &acpi_debug_level_ops, &acpi_dbg_level, 0644);
+module_param_call(debug_layer, param_set_uint, param_get_debug_layer, &acpi_dbg_layer, 0644);
+module_param_call(debug_level, param_set_uint, param_get_debug_level, &acpi_dbg_level, 0644);
 
 static char trace_method_name[6];
 module_param_string(trace_method_name, trace_method_name, 6, 0644);
@@ -159,7 +147,7 @@ module_param(trace_debug_layer, uint, 0644);
 static unsigned int trace_debug_level;
 module_param(trace_debug_level, uint, 0644);
 
-static int param_set_trace_state(const char *val, const struct kernel_param *kp)
+static int param_set_trace_state(const char *val, struct kernel_param *kp)
 {
 	int result = 0;
 
@@ -193,7 +181,7 @@ exit:
 	return result;
 }
 
-static int param_get_trace_state(char *buffer, const struct kernel_param *kp)
+static int param_get_trace_state(char *buffer, struct kernel_param *kp)
 {
 	if (!acpi_gbl_trace_method_name)
 		return sprintf(buffer, "disable");
@@ -206,12 +194,8 @@ static int param_get_trace_state(char *buffer, const struct kernel_param *kp)
 	return 0;
 }
 
-static struct kernel_param_ops param_ops_trace_state = {
-	.set = param_set_trace_state,
-	.get = param_get_trace_state,
-};
-
-module_param_cb(trace_state, &param_ops_trace_state, NULL, 0644);
+module_param_call(trace_state, param_set_trace_state, param_get_trace_state,
+		  NULL, 0644);
 
 /* --------------------------------------------------------------------------
 				DebugFS Interface

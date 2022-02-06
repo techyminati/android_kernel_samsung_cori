@@ -298,13 +298,8 @@ static struct clk osc2_clk = {
 	.rate	= 24000000,
 };
 
-static struct clk dummy_apb_pclk;
-
 static struct clk_lookup v2m_lookups[] = {
-	{	/* AMBA bus clock */
-		.con_id		= "apb_pclk",
-		.clk		= &dummy_apb_pclk,
-	}, {	/* UART0 */
+	{	/* UART0 */
 		.dev_id		= "mb:uart0",
 		.clk		= &osc2_clk,
 	}, {	/* UART1 */

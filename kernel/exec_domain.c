@@ -134,14 +134,23 @@ unregister:
 	return 0;
 }
 
-int __set_personality(unsigned int personality)
+int
+__set_personality(unsigned int personality)
 {
-	struct exec_domain *oep = current_thread_info()->exec_domain;
+	struct exec_domain	*ep, *oep;
 
-	current_thread_info()->exec_domain = lookup_exec_domain(personality);
+	ep = lookup_exec_domain(personality);
+	if (ep == current_thread_info()->exec_domain) {
+		current->personality = personality;
+		module_put(ep->module);
+		return 0;
+	}
+
 	current->personality = personality;
-	module_put(oep->module);
+	oep = current_thread_info()->exec_domain;
+	current_thread_info()->exec_domain = ep;
 
+	module_put(oep->module);
 	return 0;
 }
 
@@ -183,8 +192,11 @@ SYSCALL_DEFINE1(personality, unsigned int, personality)
 {
 	unsigned int old = current->personality;
 
-	if (personality != 0xffffffff)
+	if (personality != 0xffffffff) {
 		set_personality(personality);
+		if (current->personality != personality)
+			return -EINVAL;
+	}
 
 	return old;
 }

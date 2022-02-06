@@ -407,8 +407,8 @@ struct entropy_store {
 	struct poolinfo *poolinfo;
 	__u32 *pool;
 	const char *name;
-	struct entropy_store *pull;
 	int limit;
+	struct entropy_store *pull;
 
 	/* read-write data: */
 	spinlock_t lock;

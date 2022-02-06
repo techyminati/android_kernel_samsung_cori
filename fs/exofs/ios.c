@@ -305,6 +305,8 @@ int exofs_check_io(struct exofs_io_state *ios, u64 *resid)
 struct _striping_info {
 	u64 obj_offset;
 	u64 group_length;
+	u64 total_group_length;
+	u64 Major;
 	unsigned dev;
 	unsigned unit_off;
 };
@@ -341,6 +343,8 @@ static void _calc_stripe_info(struct exofs_io_state *ios, u64 file_offset,
 				  (M * group_depth * stripe_unit);
 
 	si->group_length = T - H;
+	si->total_group_length = T;
+	si->Major = M;
 }
 
 static int _add_stripe_unit(struct exofs_io_state *ios,  unsigned *cur_pg,
@@ -388,19 +392,20 @@ static int _add_stripe_unit(struct exofs_io_state *ios,  unsigned *cur_pg,
 }
 
 static int _prepare_one_group(struct exofs_io_state *ios, u64 length,
-			      struct _striping_info *si)
+			      struct _striping_info *si, unsigned first_comp)
 {
 	unsigned stripe_unit = ios->layout->stripe_unit;
 	unsigned mirrors_p1 = ios->layout->mirrors_p1;
 	unsigned devs_in_group = ios->layout->group_width * mirrors_p1;
 	unsigned dev = si->dev;
 	unsigned first_dev = dev - (dev % devs_in_group);
+	unsigned comp = first_comp + (dev - first_dev);
 	unsigned max_comp = ios->numdevs ? ios->numdevs - mirrors_p1 : 0;
 	unsigned cur_pg = ios->pages_consumed;
 	int ret = 0;
 
 	while (length) {
-		struct exofs_per_dev_state *per_dev = &ios->per_dev[dev];
+		struct exofs_per_dev_state *per_dev = &ios->per_dev[comp];
 		unsigned cur_len, page_off = 0;
 
 		if (!per_dev->length) {
@@ -419,8 +424,11 @@ static int _prepare_one_group(struct exofs_io_state *ios, u64 length,
 				cur_len = stripe_unit;
 			}
 
-			if (max_comp < dev)
-				max_comp = dev;
+			if (max_comp < comp)
+				max_comp = comp;
+
+			dev += mirrors_p1;
+			dev = (dev % devs_in_group) + first_dev;
 		} else {
 			cur_len = stripe_unit;
 		}
@@ -432,8 +440,8 @@ static int _prepare_one_group(struct exofs_io_state *ios, u64 length,
 		if (unlikely(ret))
 			goto out;
 
-		dev += mirrors_p1;
-		dev = (dev % devs_in_group) + first_dev;
+		comp += mirrors_p1;
+		comp = (comp % devs_in_group) + first_comp;
 
 		length -= cur_len;
 	}
@@ -446,15 +454,18 @@ out:
 static int _prepare_for_striping(struct exofs_io_state *ios)
 {
 	u64 length = ios->length;
-	u64 offset = ios->offset;
 	struct _striping_info si;
+	unsigned devs_in_group = ios->layout->group_width *
+				 ios->layout->mirrors_p1;
+	unsigned first_comp = 0;
 	int ret = 0;
+
+	_calc_stripe_info(ios, ios->offset, &si);
 
 	if (!ios->pages) {
 		if (ios->kern_buff) {
 			struct exofs_per_dev_state *per_dev = &ios->per_dev[0];
 
-			_calc_stripe_info(ios, ios->offset, &si);
 			per_dev->offset = si.obj_offset;
 			per_dev->dev = si.dev;
 
@@ -468,17 +479,26 @@ static int _prepare_for_striping(struct exofs_io_state *ios)
 	}
 
 	while (length) {
-		_calc_stripe_info(ios, offset, &si);
-
 		if (length < si.group_length)
 			si.group_length = length;
 
-		ret = _prepare_one_group(ios, si.group_length, &si);
+		ret = _prepare_one_group(ios, si.group_length, &si, first_comp);
 		if (unlikely(ret))
 			goto out;
 
-		offset += si.group_length;
 		length -= si.group_length;
+
+		si.group_length = si.total_group_length;
+		si.unit_off = 0;
+		++si.Major;
+		si.obj_offset = si.Major * ios->layout->stripe_unit *
+						ios->layout->group_depth;
+
+		si.dev = (si.dev - (si.dev % devs_in_group)) + devs_in_group;
+		si.dev %= ios->layout->s_numdevs;
+
+		first_comp += devs_in_group;
+		first_comp %= ios->layout->s_numdevs;
 	}
 
 out:
@@ -579,7 +599,7 @@ static int _sbi_write_mirror(struct exofs_io_state *ios, int cur_comp)
 			} else {
 				bio = master_dev->bio;
 				/* FIXME: bio_set_dir() */
-				bio->bi_rw |= REQ_WRITE;
+				bio->bi_rw |= (1 << BIO_RW);
 			}
 
 			osd_req_write(or, &ios->obj, per_dev->offset, bio,

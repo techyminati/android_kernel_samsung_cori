@@ -57,11 +57,11 @@ static inline int atomic_add_return(int i, atomic_t *v)
 	unsigned long flags;
 	int temp;
 
-	raw_local_irq_save(flags); /* Don't trace it in a irqsoff handler */
+	local_irq_save(flags);
 	temp = v->counter;
 	temp += i;
 	v->counter = temp;
-	raw_local_irq_restore(flags);
+	local_irq_restore(flags);
 
 	return temp;
 }
@@ -78,11 +78,11 @@ static inline int atomic_sub_return(int i, atomic_t *v)
 	unsigned long flags;
 	int temp;
 
-	raw_local_irq_save(flags); /* Don't trace it in a irqsoff handler */
+	local_irq_save(flags);
 	temp = v->counter;
 	temp -= i;
 	v->counter = temp;
-	raw_local_irq_restore(flags);
+	local_irq_restore(flags);
 
 	return temp;
 }
@@ -135,9 +135,9 @@ static inline void atomic_clear_mask(unsigned long mask, unsigned long *addr)
 	unsigned long flags;
 
 	mask = ~mask;
-	raw_local_irq_save(flags); /* Don't trace it in a irqsoff handler */
+	local_irq_save(flags);
 	*addr &= mask;
-	raw_local_irq_restore(flags);
+	local_irq_restore(flags);
 }
 
 #define atomic_xchg(ptr, v)		(xchg(&(ptr)->counter, (v)))

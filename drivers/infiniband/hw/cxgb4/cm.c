@@ -61,10 +61,6 @@ static char *states[] = {
 	NULL,
 };
 
-static int dack_mode;
-module_param(dack_mode, int, 0644);
-MODULE_PARM_DESC(dack_mode, "Delayed ack mode (default=0)");
-
 int c4iw_max_read_depth = 8;
 module_param(c4iw_max_read_depth, int, 0644);
 MODULE_PARM_DESC(c4iw_max_read_depth, "Per-connection max ORD/IRD (default=8)");
@@ -473,12 +469,11 @@ static int send_connect(struct c4iw_ep *ep)
 		       __func__);
 		return -ENOMEM;
 	}
-	set_wr_txq(skb, CPL_PRIORITY_SETUP, ep->ctrlq_idx);
+	set_wr_txq(skb, CPL_PRIORITY_SETUP, ep->txq_idx);
 
 	cxgb4_best_mtu(ep->com.dev->rdev.lldi.mtus, ep->mtu, &mtu_idx);
 	wscale = compute_wscale(rcv_win);
 	opt0 = KEEP_ALIVE(1) |
-	       DELACK(1) |
 	       WND_SCALE(wscale) |
 	       MSS_IDX(mtu_idx) |
 	       L2T_IDX(ep->l2t->idx) |
@@ -785,11 +780,11 @@ static void connect_reply_upcall(struct c4iw_ep *ep, int status)
 		event.private_data_len = ep->plen;
 		event.private_data = ep->mpa_pkt + sizeof(struct mpa_message);
 	}
-
-	PDBG("%s ep %p tid %u status %d\n", __func__, ep,
-	     ep->hwtid, status);
-	ep->com.cm_id->event_handler(ep->com.cm_id, &event);
-
+	if (ep->com.cm_id) {
+		PDBG("%s ep %p tid %u status %d\n", __func__, ep,
+		     ep->hwtid, status);
+		ep->com.cm_id->event_handler(ep->com.cm_id, &event);
+	}
 	if (status < 0) {
 		ep->com.cm_id->rem_ref(ep->com.cm_id);
 		ep->com.cm_id = NULL;
@@ -850,10 +845,8 @@ static int update_rx_credits(struct c4iw_ep *ep, u32 credits)
 	INIT_TP_WR(req, ep->hwtid);
 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_RX_DATA_ACK,
 						    ep->hwtid));
-	req->credit_dack = cpu_to_be32(credits | RX_FORCE_ACK(1) |
-				       F_RX_DACK_CHANGE |
-				       V_RX_DACK_MODE(dack_mode));
-	set_wr_txq(skb, CPL_PRIORITY_ACK, ep->ctrlq_idx);
+	req->credit_dack = cpu_to_be32(credits);
+	set_wr_txq(skb, CPL_PRIORITY_ACK, ep->txq_idx);
 	c4iw_ofld_send(&ep->com.dev->rdev, skb);
 	return credits;
 }
@@ -1271,7 +1264,6 @@ static void accept_cr(struct c4iw_ep *ep, __be32 peer_ip, struct sk_buff *skb,
 	cxgb4_best_mtu(ep->com.dev->rdev.lldi.mtus, ep->mtu, &mtu_idx);
 	wscale = compute_wscale(rcv_win);
 	opt0 = KEEP_ALIVE(1) |
-	       DELACK(1) |
 	       WND_SCALE(wscale) |
 	       MSS_IDX(mtu_idx) |
 	       L2T_IDX(ep->l2t->idx) |
@@ -1295,7 +1287,7 @@ static void accept_cr(struct c4iw_ep *ep, __be32 peer_ip, struct sk_buff *skb,
 				      ep->hwtid));
 	rpl->opt0 = cpu_to_be64(opt0);
 	rpl->opt2 = cpu_to_be32(opt2);
-	set_wr_txq(skb, CPL_PRIORITY_SETUP, ep->ctrlq_idx);
+	set_wr_txq(skb, CPL_PRIORITY_SETUP, ep->txq_idx);
 	c4iw_l2t_send(&ep->com.dev->rdev, skb, ep->l2t);
 
 	return;
@@ -1352,7 +1344,7 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 	u16 rss_qid;
 	u32 mtu;
 	int step;
-	int txq_idx, ctrlq_idx;
+	int txq_idx;
 
 	parent_ep = lookup_stid(t, stid);
 	PDBG("%s parent ep %p tid %u\n", __func__, parent_ep, hwtid);
@@ -1373,7 +1365,7 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 		       __func__);
 		goto reject;
 	}
-	dst = &rt->dst;
+	dst = &rt->u.dst;
 	if (dst->neighbour->dev->flags & IFF_LOOPBACK) {
 		pdev = ip_dev_find(&init_net, peer_ip);
 		BUG_ON(!pdev);
@@ -1384,7 +1376,6 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 		smac_idx = (cxgb4_port_viid(pdev) & 0x7F) << 1;
 		step = dev->rdev.lldi.ntxq / dev->rdev.lldi.nchan;
 		txq_idx = cxgb4_port_idx(pdev) * step;
-		ctrlq_idx = cxgb4_port_idx(pdev);
 		step = dev->rdev.lldi.nrxq / dev->rdev.lldi.nchan;
 		rss_qid = dev->rdev.lldi.rxq_ids[cxgb4_port_idx(pdev) * step];
 		dev_put(pdev);
@@ -1396,7 +1387,6 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 		smac_idx = (cxgb4_port_viid(dst->neighbour->dev) & 0x7F) << 1;
 		step = dev->rdev.lldi.ntxq / dev->rdev.lldi.nchan;
 		txq_idx = cxgb4_port_idx(dst->neighbour->dev) * step;
-		ctrlq_idx = cxgb4_port_idx(dst->neighbour->dev);
 		step = dev->rdev.lldi.nrxq / dev->rdev.lldi.nchan;
 		rss_qid = dev->rdev.lldi.rxq_ids[
 			  cxgb4_port_idx(dst->neighbour->dev) * step];
@@ -1436,7 +1426,6 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 	child_ep->rss_qid = rss_qid;
 	child_ep->mtu = mtu;
 	child_ep->txq_idx = txq_idx;
-	child_ep->ctrlq_idx = ctrlq_idx;
 
 	PDBG("%s tx_chan %u smac_idx %u rss_qid %u\n", __func__,
 	     tx_chan, smac_idx, rss_qid);
@@ -1484,6 +1473,8 @@ static int peer_close(struct c4iw_dev *dev, struct sk_buff *skb)
 	int closing = 0;
 	struct tid_info *t = dev->rdev.lldi.tids;
 	unsigned int tid = GET_TID(hdr);
+	int start_timer = 0;
+	int stop_timer = 0;
 
 	ep = lookup_tid(t, tid);
 	PDBG("%s ep %p tid %u\n", __func__, ep, ep->hwtid);
@@ -1520,7 +1511,7 @@ static int peer_close(struct c4iw_dev *dev, struct sk_buff *skb)
 		wake_up(&ep->com.waitq);
 		break;
 	case FPDU_MODE:
-		start_ep_timer(ep);
+		start_timer = 1;
 		__state_set(&ep->com, CLOSING);
 		closing = 1;
 		peer_close_upcall(ep);
@@ -1533,7 +1524,7 @@ static int peer_close(struct c4iw_dev *dev, struct sk_buff *skb)
 		disconnect = 0;
 		break;
 	case MORIBUND:
-		stop_ep_timer(ep);
+		stop_timer = 1;
 		if (ep->com.cm_id && ep->com.qp) {
 			attrs.next_state = C4IW_QP_STATE_IDLE;
 			c4iw_modify_qp(ep->com.qp->rhp, ep->com.qp,
@@ -1556,6 +1547,10 @@ static int peer_close(struct c4iw_dev *dev, struct sk_buff *skb)
 		c4iw_modify_qp(ep->com.qp->rhp, ep->com.qp,
 			       C4IW_QP_ATTR_NEXT_STATE, &attrs, 1);
 	}
+	if (start_timer)
+		start_ep_timer(ep);
+	if (stop_timer)
+		stop_ep_timer(ep);
 	if (disconnect)
 		c4iw_ep_disconnect(ep, 0, GFP_KERNEL);
 	if (release)
@@ -1584,6 +1579,7 @@ static int peer_abort(struct c4iw_dev *dev, struct sk_buff *skb)
 	unsigned long flags;
 	struct tid_info *t = dev->rdev.lldi.tids;
 	unsigned int tid = GET_TID(req);
+	int stop_timer = 0;
 
 	ep = lookup_tid(t, tid);
 	if (is_neg_adv_abort(req->status)) {
@@ -1598,10 +1594,10 @@ static int peer_abort(struct c4iw_dev *dev, struct sk_buff *skb)
 	case CONNECTING:
 		break;
 	case MPA_REQ_WAIT:
-		stop_ep_timer(ep);
+		stop_timer = 1;
 		break;
 	case MPA_REQ_SENT:
-		stop_ep_timer(ep);
+		stop_timer = 1;
 		connect_reply_upcall(ep, -ECONNRESET);
 		break;
 	case MPA_REP_SENT:
@@ -1625,7 +1621,7 @@ static int peer_abort(struct c4iw_dev *dev, struct sk_buff *skb)
 		break;
 	case MORIBUND:
 	case CLOSING:
-		stop_ep_timer(ep);
+		stop_timer = 1;
 		/*FALLTHROUGH*/
 	case FPDU_MODE:
 		if (ep->com.cm_id && ep->com.qp) {
@@ -1671,6 +1667,8 @@ static int peer_abort(struct c4iw_dev *dev, struct sk_buff *skb)
 	rpl->cmd = CPL_ABORT_NO_RST;
 	c4iw_ofld_send(&ep->com.dev->rdev, rpl_skb);
 out:
+	if (stop_timer)
+		stop_ep_timer(ep);
 	if (release)
 		release_ep_resources(ep);
 	return 0;
@@ -1685,6 +1683,7 @@ static int close_con_rpl(struct c4iw_dev *dev, struct sk_buff *skb)
 	int release = 0;
 	struct tid_info *t = dev->rdev.lldi.tids;
 	unsigned int tid = GET_TID(rpl);
+	int stop_timer = 0;
 
 	ep = lookup_tid(t, tid);
 
@@ -1698,7 +1697,7 @@ static int close_con_rpl(struct c4iw_dev *dev, struct sk_buff *skb)
 		__state_set(&ep->com, MORIBUND);
 		break;
 	case MORIBUND:
-		stop_ep_timer(ep);
+		stop_timer = 1;
 		if ((ep->com.cm_id) && (ep->com.qp)) {
 			attrs.next_state = C4IW_QP_STATE_IDLE;
 			c4iw_modify_qp(ep->com.qp->rhp,
@@ -1718,6 +1717,8 @@ static int close_con_rpl(struct c4iw_dev *dev, struct sk_buff *skb)
 		break;
 	}
 	spin_unlock_irqrestore(&ep->com.lock, flags);
+	if (stop_timer)
+		stop_ep_timer(ep);
 	if (release)
 		release_ep_resources(ep);
 	return 0;
@@ -1938,7 +1939,7 @@ int c4iw_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 		err = -EHOSTUNREACH;
 		goto fail3;
 	}
-	ep->dst = &rt->dst;
+	ep->dst = &rt->u.dst;
 
 	/* get a l2t entry */
 	if (ep->dst->neighbour->dev->flags & IFF_LOOPBACK) {
@@ -1956,7 +1957,6 @@ int c4iw_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 		ep->txq_idx = cxgb4_port_idx(pdev) * step;
 		step = ep->com.dev->rdev.lldi.nrxq /
 		       ep->com.dev->rdev.lldi.nchan;
-		ep->ctrlq_idx = cxgb4_port_idx(pdev);
 		ep->rss_qid = ep->com.dev->rdev.lldi.rxq_ids[
 			      cxgb4_port_idx(pdev) * step];
 		dev_put(pdev);
@@ -1971,7 +1971,6 @@ int c4iw_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 		step = ep->com.dev->rdev.lldi.ntxq /
 		       ep->com.dev->rdev.lldi.nchan;
 		ep->txq_idx = cxgb4_port_idx(ep->dst->neighbour->dev) * step;
-		ep->ctrlq_idx = cxgb4_port_idx(ep->dst->neighbour->dev);
 		step = ep->com.dev->rdev.lldi.nrxq /
 		       ep->com.dev->rdev.lldi.nchan;
 		ep->rss_qid = ep->com.dev->rdev.lldi.rxq_ids[
@@ -2050,15 +2049,8 @@ int c4iw_create_listen(struct iw_cm_id *cm_id, int backlog)
 		goto fail3;
 
 	/* wait for pass_open_rpl */
-	wait_event_timeout(ep->com.waitq, ep->com.rpl_done, C4IW_WR_TO);
-	if (ep->com.rpl_done)
-		err = ep->com.rpl_err;
-	else {
-		printk(KERN_ERR MOD "Device %s not responding!\n",
-		       pci_name(ep->com.dev->rdev.lldi.pdev));
-		ep->com.dev->rdev.flags = T4_FATAL_ERROR;
-		err = -EIO;
-	}
+	wait_event(ep->com.waitq, ep->com.rpl_done);
+	err = ep->com.rpl_err;
 	if (!err) {
 		cm_id->provider_data = ep;
 		goto out;
@@ -2087,17 +2079,10 @@ int c4iw_destroy_listen(struct iw_cm_id *cm_id)
 	err = listen_stop(ep);
 	if (err)
 		goto done;
-	wait_event_timeout(ep->com.waitq, ep->com.rpl_done, C4IW_WR_TO);
-	if (ep->com.rpl_done)
-		err = ep->com.rpl_err;
-	else {
-		printk(KERN_ERR MOD "Device %s not responding!\n",
-		       pci_name(ep->com.dev->rdev.lldi.pdev));
-		ep->com.dev->rdev.flags = T4_FATAL_ERROR;
-		err = -EIO;
-	}
+	wait_event(ep->com.waitq, ep->com.rpl_done);
 	cxgb4_free_stid(ep->com.dev->rdev.lldi.tids, ep->stid, PF_INET);
 done:
+	err = ep->com.rpl_err;
 	cm_id->rem_ref(cm_id);
 	c4iw_put_ep(&ep->com);
 	return err;
@@ -2110,6 +2095,8 @@ int c4iw_ep_disconnect(struct c4iw_ep *ep, int abrupt, gfp_t gfp)
 	int close = 0;
 	int fatal = 0;
 	struct c4iw_rdev *rdev;
+	int start_timer = 0;
+	int stop_timer = 0;
 
 	spin_lock_irqsave(&ep->com.lock, flags);
 
@@ -2133,7 +2120,7 @@ int c4iw_ep_disconnect(struct c4iw_ep *ep, int abrupt, gfp_t gfp)
 			ep->com.state = ABORTING;
 		else {
 			ep->com.state = CLOSING;
-			start_ep_timer(ep);
+			start_timer = 1;
 		}
 		set_bit(CLOSE_SENT, &ep->com.flags);
 		break;
@@ -2141,7 +2128,7 @@ int c4iw_ep_disconnect(struct c4iw_ep *ep, int abrupt, gfp_t gfp)
 		if (!test_and_set_bit(CLOSE_SENT, &ep->com.flags)) {
 			close = 1;
 			if (abrupt) {
-				stop_ep_timer(ep);
+				stop_timer = 1;
 				ep->com.state = ABORTING;
 			} else
 				ep->com.state = MORIBUND;
@@ -2159,6 +2146,10 @@ int c4iw_ep_disconnect(struct c4iw_ep *ep, int abrupt, gfp_t gfp)
 	}
 
 	spin_unlock_irqrestore(&ep->com.lock, flags);
+	if (start_timer)
+		start_ep_timer(ep);
+	if (stop_timer)
+		stop_ep_timer(ep);
 	if (close) {
 		if (abrupt)
 			ret = abort_connection(ep, NULL, gfp);
@@ -2253,7 +2244,7 @@ static void process_work(struct work_struct *work)
 {
 	struct sk_buff *skb = NULL;
 	struct c4iw_dev *dev;
-	struct cpl_act_establish *rpl;
+	struct cpl_act_establish *rpl = cplhdr(skb);
 	unsigned int opcode;
 	int ret;
 

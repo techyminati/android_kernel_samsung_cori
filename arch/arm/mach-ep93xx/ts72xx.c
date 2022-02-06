@@ -17,6 +17,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/m48t86.h>
+#include <linux/mtd/physmap.h>
 #include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
 
@@ -172,13 +173,31 @@ static struct platform_device ts72xx_nand_flash = {
 };
 
 
+/*************************************************************************
+ * NOR flash (TS-7200 only)
+ *************************************************************************/
+static struct physmap_flash_data ts72xx_nor_data = {
+	.width		= 2,
+};
+
+static struct resource ts72xx_nor_resource = {
+	.start		= EP93XX_CS6_PHYS_BASE,
+	.end		= EP93XX_CS6_PHYS_BASE + SZ_16M - 1,
+	.flags		= IORESOURCE_MEM,
+};
+
+static struct platform_device ts72xx_nor_flash = {
+	.name			= "physmap-flash",
+	.id			= 0,
+	.dev.platform_data	= &ts72xx_nor_data,
+	.resource		= &ts72xx_nor_resource,
+	.num_resources		= 1,
+};
+
 static void __init ts72xx_register_flash(void)
 {
-	/*
-	 * TS7200 has NOR flash all other TS72xx board have NAND flash.
-	 */
 	if (board_is_ts7200()) {
-		ep93xx_register_flash(2, EP93XX_CS6_PHYS_BASE, SZ_16M);
+		platform_device_register(&ts72xx_nor_flash);
 	} else {
 		resource_size_t start;
 

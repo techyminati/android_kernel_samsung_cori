@@ -76,18 +76,18 @@ MODULE_LICENSE("GPL");
  * So, if something doesn't work as you want, just try other values =)
  */
 static uint wapf = 1;
-module_param(wapf, uint, 0444);
+module_param(wapf, uint, 0644);
 MODULE_PARM_DESC(wapf, "WAPF value");
 
 static int wlan_status = 1;
 static int bluetooth_status = 1;
 
-module_param(wlan_status, int, 0444);
+module_param(wlan_status, int, 0644);
 MODULE_PARM_DESC(wlan_status, "Set the wireless status on boot "
 		 "(0 = disabled, 1 = enabled, -1 = don't do anything). "
 		 "default is 1");
 
-module_param(bluetooth_status, int, 0444);
+module_param(bluetooth_status, int, 0644);
 MODULE_PARM_DESC(bluetooth_status, "Set the wireless status on boot "
 		 "(0 = disabled, 1 = enabled, -1 = don't do anything). "
 		 "default is 1");
@@ -297,7 +297,7 @@ static int write_acpi_int_ret(acpi_handle handle, const char *method, int val,
 	acpi_status status;
 
 	if (!handle)
-		return -1;
+		return 0;
 
 	params.count = 1;
 	params.pointer = &in_obj;
@@ -796,11 +796,10 @@ static ssize_t store_ledd(struct device *dev, struct device_attribute *attr,
 
 	rv = parse_arg(buf, count, &value);
 	if (rv > 0) {
-		if (write_acpi_int(asus->handle, METHOD_LEDD, value)) {
+		if (write_acpi_int(asus->handle, METHOD_LEDD, value))
 			pr_warning("LED display write failed\n");
-			return -ENODEV;
-		}
-		asus->ledd_status = (u32) value;
+		else
+			asus->ledd_status = (u32) value;
 	}
 	return rv;
 }
@@ -1124,7 +1123,7 @@ static int asus_input_init(struct asus_laptop *asus)
 	input = input_allocate_device();
 	if (!input) {
 		pr_info("Unable to allocate input device\n");
-		return -ENOMEM;
+		return 0;
 	}
 	input->name = "Asus Laptop extra buttons";
 	input->phys = ASUS_LAPTOP_FILE "/input0";
@@ -1135,20 +1134,20 @@ static int asus_input_init(struct asus_laptop *asus)
 	error = sparse_keymap_setup(input, asus_keymap, NULL);
 	if (error) {
 		pr_err("Unable to setup input device keymap\n");
-		goto err_free_dev;
+		goto err_keymap;
 	}
 	error = input_register_device(input);
 	if (error) {
 		pr_info("Unable to register input device\n");
-		goto err_free_keymap;
+		goto err_device;
 	}
 
 	asus->inputdev = input;
 	return 0;
 
-err_free_keymap:
+err_keymap:
 	sparse_keymap_free(input);
-err_free_dev:
+err_device:
 	input_free_device(input);
 	return error;
 }
@@ -1398,10 +1397,8 @@ static int asus_laptop_get_info(struct asus_laptop *asus)
 		}
 	}
 	asus->name = kstrdup(string, GFP_KERNEL);
-	if (!asus->name) {
-		kfree(buffer.pointer);
+	if (!asus->name)
 		return -ENOMEM;
-	}
 
 	if (*string)
 		pr_notice("  %s model detected\n", string);

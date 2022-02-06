@@ -214,7 +214,7 @@ static void perf_unpin_context(struct perf_event_context *ctx)
 
 static inline u64 perf_clock(void)
 {
-	return local_clock();
+	return cpu_clock(raw_smp_processor_id());
 }
 
 /*
@@ -675,6 +675,7 @@ group_sched_in(struct perf_event *group_event,
 	struct perf_event *event, *partial_group = NULL;
 	const struct pmu *pmu = group_event->pmu;
 	bool txn = false;
+	int ret;
 
 	if (group_event->state == PERF_EVENT_STATE_OFF)
 		return 0;
@@ -702,8 +703,14 @@ group_sched_in(struct perf_event *group_event,
 		}
 	}
 
-	if (!txn || !pmu->commit_txn(pmu))
+	if (!txn)
 		return 0;
+
+	ret = pmu->commit_txn(pmu);
+	if (!ret) {
+		pmu->cancel_txn(pmu);
+		return 0;
+	}
 
 group_error:
 	/*
@@ -1148,9 +1155,9 @@ static void __perf_event_sync_stat(struct perf_event *event,
 	 * In order to keep per-task stats reliable we need to flip the event
 	 * values when we flip the contexts.
 	 */
-	value = local64_read(&next_event->count);
-	value = local64_xchg(&event->count, value);
-	local64_set(&next_event->count, value);
+	value = atomic64_read(&next_event->count);
+	value = atomic64_xchg(&event->count, value);
+	atomic64_set(&next_event->count, value);
 
 	swap(event->total_time_enabled, next_event->total_time_enabled);
 	swap(event->total_time_running, next_event->total_time_running);
@@ -1540,10 +1547,10 @@ static void perf_adjust_period(struct perf_event *event, u64 nsec, u64 count)
 
 	hwc->sample_period = sample_period;
 
-	if (local64_read(&hwc->period_left) > 8*sample_period) {
+	if (atomic64_read(&hwc->period_left) > 8*sample_period) {
 		perf_disable();
 		perf_event_stop(event);
-		local64_set(&hwc->period_left, 0);
+		atomic64_set(&hwc->period_left, 0);
 		perf_event_start(event);
 		perf_enable();
 	}
@@ -1584,7 +1591,7 @@ static void perf_ctx_adjust_freq(struct perf_event_context *ctx)
 
 		perf_disable();
 		event->pmu->read(event);
-		now = local64_read(&event->count);
+		now = atomic64_read(&event->count);
 		delta = now - hwc->freq_count_stamp;
 		hwc->freq_count_stamp = now;
 
@@ -1736,11 +1743,6 @@ static void __perf_event_read(void *info)
 	event->pmu->read(event);
 }
 
-static inline u64 perf_event_count(struct perf_event *event)
-{
-	return local64_read(&event->count) + atomic64_read(&event->child_count);
-}
-
 static u64 perf_event_read(struct perf_event *event)
 {
 	/*
@@ -1760,7 +1762,7 @@ static u64 perf_event_read(struct perf_event *event)
 		raw_spin_unlock_irqrestore(&ctx->lock, flags);
 	}
 
-	return perf_event_count(event);
+	return atomic64_read(&event->count);
 }
 
 /*
@@ -1881,7 +1883,7 @@ static void free_event_rcu(struct rcu_head *head)
 }
 
 static void perf_pending_sync(struct perf_event *event);
-static void perf_buffer_put(struct perf_buffer *buffer);
+static void perf_mmap_data_put(struct perf_mmap_data *data);
 
 static void free_event(struct perf_event *event)
 {
@@ -1889,7 +1891,7 @@ static void free_event(struct perf_event *event)
 
 	if (!event->parent) {
 		atomic_dec(&nr_events);
-		if (event->attr.mmap || event->attr.mmap_data)
+		if (event->attr.mmap)
 			atomic_dec(&nr_mmap_events);
 		if (event->attr.comm)
 			atomic_dec(&nr_comm_events);
@@ -1897,9 +1899,9 @@ static void free_event(struct perf_event *event)
 			atomic_dec(&nr_task_events);
 	}
 
-	if (event->buffer) {
-		perf_buffer_put(event->buffer);
-		event->buffer = NULL;
+	if (event->data) {
+		perf_mmap_data_put(event->data);
+		event->data = NULL;
 	}
 
 	if (event->destroy)
@@ -2124,13 +2126,13 @@ perf_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 static unsigned int perf_poll(struct file *file, poll_table *wait)
 {
 	struct perf_event *event = file->private_data;
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	unsigned int events = POLL_HUP;
 
 	rcu_read_lock();
-	buffer = rcu_dereference(event->buffer);
-	if (buffer)
-		events = atomic_xchg(&buffer->poll, 0);
+	data = rcu_dereference(event->data);
+	if (data)
+		events = atomic_xchg(&data->poll, 0);
 	rcu_read_unlock();
 
 	poll_wait(file, &event->waitq, wait);
@@ -2141,7 +2143,7 @@ static unsigned int perf_poll(struct file *file, poll_table *wait)
 static void perf_event_reset(struct perf_event *event)
 {
 	(void)perf_event_read(event);
-	local64_set(&event->count, 0);
+	atomic64_set(&event->count, 0);
 	perf_event_update_userpage(event);
 }
 
@@ -2340,14 +2342,14 @@ static int perf_event_index(struct perf_event *event)
 void perf_event_update_userpage(struct perf_event *event)
 {
 	struct perf_event_mmap_page *userpg;
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 
 	rcu_read_lock();
-	buffer = rcu_dereference(event->buffer);
-	if (!buffer)
+	data = rcu_dereference(event->data);
+	if (!data)
 		goto unlock;
 
-	userpg = buffer->user_page;
+	userpg = data->user_page;
 
 	/*
 	 * Disable preemption so as to not let the corresponding user-space
@@ -2357,9 +2359,9 @@ void perf_event_update_userpage(struct perf_event *event)
 	++userpg->lock;
 	barrier();
 	userpg->index = perf_event_index(event);
-	userpg->offset = perf_event_count(event);
+	userpg->offset = atomic64_read(&event->count);
 	if (event->state == PERF_EVENT_STATE_ACTIVE)
-		userpg->offset -= local64_read(&event->hw.prev_count);
+		userpg->offset -= atomic64_read(&event->hw.prev_count);
 
 	userpg->time_enabled = event->total_time_enabled +
 			atomic64_read(&event->child_total_time_enabled);
@@ -2374,25 +2376,6 @@ unlock:
 	rcu_read_unlock();
 }
 
-static unsigned long perf_data_size(struct perf_buffer *buffer);
-
-static void
-perf_buffer_init(struct perf_buffer *buffer, long watermark, int flags)
-{
-	long max_size = perf_data_size(buffer);
-
-	if (watermark)
-		buffer->watermark = min(max_size, watermark);
-
-	if (!buffer->watermark)
-		buffer->watermark = max_size / 2;
-
-	if (flags & PERF_BUFFER_WRITABLE)
-		buffer->writable = 1;
-
-	atomic_set(&buffer->refcount, 1);
-}
-
 #ifndef CONFIG_PERF_USE_VMALLOC
 
 /*
@@ -2400,15 +2383,15 @@ perf_buffer_init(struct perf_buffer *buffer, long watermark, int flags)
  */
 
 static struct page *
-perf_mmap_to_page(struct perf_buffer *buffer, unsigned long pgoff)
+perf_mmap_to_page(struct perf_mmap_data *data, unsigned long pgoff)
 {
-	if (pgoff > buffer->nr_pages)
+	if (pgoff > data->nr_pages)
 		return NULL;
 
 	if (pgoff == 0)
-		return virt_to_page(buffer->user_page);
+		return virt_to_page(data->user_page);
 
-	return virt_to_page(buffer->data_pages[pgoff - 1]);
+	return virt_to_page(data->data_pages[pgoff - 1]);
 }
 
 static void *perf_mmap_alloc_page(int cpu)
@@ -2424,44 +2407,42 @@ static void *perf_mmap_alloc_page(int cpu)
 	return page_address(page);
 }
 
-static struct perf_buffer *
-perf_buffer_alloc(int nr_pages, long watermark, int cpu, int flags)
+static struct perf_mmap_data *
+perf_mmap_data_alloc(struct perf_event *event, int nr_pages)
 {
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	unsigned long size;
 	int i;
 
-	size = sizeof(struct perf_buffer);
+	size = sizeof(struct perf_mmap_data);
 	size += nr_pages * sizeof(void *);
 
-	buffer = kzalloc(size, GFP_KERNEL);
-	if (!buffer)
+	data = kzalloc(size, GFP_KERNEL);
+	if (!data)
 		goto fail;
 
-	buffer->user_page = perf_mmap_alloc_page(cpu);
-	if (!buffer->user_page)
+	data->user_page = perf_mmap_alloc_page(event->cpu);
+	if (!data->user_page)
 		goto fail_user_page;
 
 	for (i = 0; i < nr_pages; i++) {
-		buffer->data_pages[i] = perf_mmap_alloc_page(cpu);
-		if (!buffer->data_pages[i])
+		data->data_pages[i] = perf_mmap_alloc_page(event->cpu);
+		if (!data->data_pages[i])
 			goto fail_data_pages;
 	}
 
-	buffer->nr_pages = nr_pages;
+	data->nr_pages = nr_pages;
 
-	perf_buffer_init(buffer, watermark, flags);
-
-	return buffer;
+	return data;
 
 fail_data_pages:
 	for (i--; i >= 0; i--)
-		free_page((unsigned long)buffer->data_pages[i]);
+		free_page((unsigned long)data->data_pages[i]);
 
-	free_page((unsigned long)buffer->user_page);
+	free_page((unsigned long)data->user_page);
 
 fail_user_page:
-	kfree(buffer);
+	kfree(data);
 
 fail:
 	return NULL;
@@ -2475,17 +2456,17 @@ static void perf_mmap_free_page(unsigned long addr)
 	__free_page(page);
 }
 
-static void perf_buffer_free(struct perf_buffer *buffer)
+static void perf_mmap_data_free(struct perf_mmap_data *data)
 {
 	int i;
 
-	perf_mmap_free_page((unsigned long)buffer->user_page);
-	for (i = 0; i < buffer->nr_pages; i++)
-		perf_mmap_free_page((unsigned long)buffer->data_pages[i]);
-	kfree(buffer);
+	perf_mmap_free_page((unsigned long)data->user_page);
+	for (i = 0; i < data->nr_pages; i++)
+		perf_mmap_free_page((unsigned long)data->data_pages[i]);
+	kfree(data);
 }
 
-static inline int page_order(struct perf_buffer *buffer)
+static inline int page_order(struct perf_mmap_data *data)
 {
 	return 0;
 }
@@ -2498,18 +2479,18 @@ static inline int page_order(struct perf_buffer *buffer)
  * Required for architectures that have d-cache aliasing issues.
  */
 
-static inline int page_order(struct perf_buffer *buffer)
+static inline int page_order(struct perf_mmap_data *data)
 {
-	return buffer->page_order;
+	return data->page_order;
 }
 
 static struct page *
-perf_mmap_to_page(struct perf_buffer *buffer, unsigned long pgoff)
+perf_mmap_to_page(struct perf_mmap_data *data, unsigned long pgoff)
 {
-	if (pgoff > (1UL << page_order(buffer)))
+	if (pgoff > (1UL << page_order(data)))
 		return NULL;
 
-	return vmalloc_to_page((void *)buffer->user_page + pgoff * PAGE_SIZE);
+	return vmalloc_to_page((void *)data->user_page + pgoff * PAGE_SIZE);
 }
 
 static void perf_mmap_unmark_page(void *addr)
@@ -2519,59 +2500,57 @@ static void perf_mmap_unmark_page(void *addr)
 	page->mapping = NULL;
 }
 
-static void perf_buffer_free_work(struct work_struct *work)
+static void perf_mmap_data_free_work(struct work_struct *work)
 {
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	void *base;
 	int i, nr;
 
-	buffer = container_of(work, struct perf_buffer, work);
-	nr = 1 << page_order(buffer);
+	data = container_of(work, struct perf_mmap_data, work);
+	nr = 1 << page_order(data);
 
-	base = buffer->user_page;
+	base = data->user_page;
 	for (i = 0; i < nr + 1; i++)
 		perf_mmap_unmark_page(base + (i * PAGE_SIZE));
 
 	vfree(base);
-	kfree(buffer);
+	kfree(data);
 }
 
-static void perf_buffer_free(struct perf_buffer *buffer)
+static void perf_mmap_data_free(struct perf_mmap_data *data)
 {
-	schedule_work(&buffer->work);
+	schedule_work(&data->work);
 }
 
-static struct perf_buffer *
-perf_buffer_alloc(int nr_pages, long watermark, int cpu, int flags)
+static struct perf_mmap_data *
+perf_mmap_data_alloc(struct perf_event *event, int nr_pages)
 {
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	unsigned long size;
 	void *all_buf;
 
-	size = sizeof(struct perf_buffer);
+	size = sizeof(struct perf_mmap_data);
 	size += sizeof(void *);
 
-	buffer = kzalloc(size, GFP_KERNEL);
-	if (!buffer)
+	data = kzalloc(size, GFP_KERNEL);
+	if (!data)
 		goto fail;
 
-	INIT_WORK(&buffer->work, perf_buffer_free_work);
+	INIT_WORK(&data->work, perf_mmap_data_free_work);
 
 	all_buf = vmalloc_user((nr_pages + 1) * PAGE_SIZE);
 	if (!all_buf)
 		goto fail_all_buf;
 
-	buffer->user_page = all_buf;
-	buffer->data_pages[0] = all_buf + PAGE_SIZE;
-	buffer->page_order = ilog2(nr_pages);
-	buffer->nr_pages = 1;
+	data->user_page = all_buf;
+	data->data_pages[0] = all_buf + PAGE_SIZE;
+	data->page_order = ilog2(nr_pages);
+	data->nr_pages = 1;
 
-	perf_buffer_init(buffer, watermark, flags);
-
-	return buffer;
+	return data;
 
 fail_all_buf:
-	kfree(buffer);
+	kfree(data);
 
 fail:
 	return NULL;
@@ -2579,15 +2558,15 @@ fail:
 
 #endif
 
-static unsigned long perf_data_size(struct perf_buffer *buffer)
+static unsigned long perf_data_size(struct perf_mmap_data *data)
 {
-	return buffer->nr_pages << (PAGE_SHIFT + page_order(buffer));
+	return data->nr_pages << (PAGE_SHIFT + page_order(data));
 }
 
 static int perf_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct perf_event *event = vma->vm_file->private_data;
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	int ret = VM_FAULT_SIGBUS;
 
 	if (vmf->flags & FAULT_FLAG_MKWRITE) {
@@ -2597,14 +2576,14 @@ static int perf_mmap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	}
 
 	rcu_read_lock();
-	buffer = rcu_dereference(event->buffer);
-	if (!buffer)
+	data = rcu_dereference(event->data);
+	if (!data)
 		goto unlock;
 
 	if (vmf->pgoff && (vmf->flags & FAULT_FLAG_WRITE))
 		goto unlock;
 
-	vmf->page = perf_mmap_to_page(buffer, vmf->pgoff);
+	vmf->page = perf_mmap_to_page(data, vmf->pgoff);
 	if (!vmf->page)
 		goto unlock;
 
@@ -2619,35 +2598,52 @@ unlock:
 	return ret;
 }
 
-static void perf_buffer_free_rcu(struct rcu_head *rcu_head)
+static void
+perf_mmap_data_init(struct perf_event *event, struct perf_mmap_data *data)
 {
-	struct perf_buffer *buffer;
+	long max_size = perf_data_size(data);
 
-	buffer = container_of(rcu_head, struct perf_buffer, rcu_head);
-	perf_buffer_free(buffer);
+	if (event->attr.watermark) {
+		data->watermark = min_t(long, max_size,
+					event->attr.wakeup_watermark);
+	}
+
+	if (!data->watermark)
+		data->watermark = max_size / 2;
+
+	atomic_set(&data->refcount, 1);
+	rcu_assign_pointer(event->data, data);
 }
 
-static struct perf_buffer *perf_buffer_get(struct perf_event *event)
+static void perf_mmap_data_free_rcu(struct rcu_head *rcu_head)
 {
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
+
+	data = container_of(rcu_head, struct perf_mmap_data, rcu_head);
+	perf_mmap_data_free(data);
+}
+
+static struct perf_mmap_data *perf_mmap_data_get(struct perf_event *event)
+{
+	struct perf_mmap_data *data;
 
 	rcu_read_lock();
-	buffer = rcu_dereference(event->buffer);
-	if (buffer) {
-		if (!atomic_inc_not_zero(&buffer->refcount))
-			buffer = NULL;
+	data = rcu_dereference(event->data);
+	if (data) {
+		if (!atomic_inc_not_zero(&data->refcount))
+			data = NULL;
 	}
 	rcu_read_unlock();
 
-	return buffer;
+	return data;
 }
 
-static void perf_buffer_put(struct perf_buffer *buffer)
+static void perf_mmap_data_put(struct perf_mmap_data *data)
 {
-	if (!atomic_dec_and_test(&buffer->refcount))
+	if (!atomic_dec_and_test(&data->refcount))
 		return;
 
-	call_rcu(&buffer->rcu_head, perf_buffer_free_rcu);
+	call_rcu(&data->rcu_head, perf_mmap_data_free_rcu);
 }
 
 static void perf_mmap_open(struct vm_area_struct *vma)
@@ -2662,16 +2658,16 @@ static void perf_mmap_close(struct vm_area_struct *vma)
 	struct perf_event *event = vma->vm_file->private_data;
 
 	if (atomic_dec_and_mutex_lock(&event->mmap_count, &event->mmap_mutex)) {
-		unsigned long size = perf_data_size(event->buffer);
+		unsigned long size = perf_data_size(event->data);
 		struct user_struct *user = event->mmap_user;
-		struct perf_buffer *buffer = event->buffer;
+		struct perf_mmap_data *data = event->data;
 
 		atomic_long_sub((size >> PAGE_SHIFT) + 1, &user->locked_vm);
 		vma->vm_mm->locked_vm -= event->mmap_locked;
-		rcu_assign_pointer(event->buffer, NULL);
+		rcu_assign_pointer(event->data, NULL);
 		mutex_unlock(&event->mmap_mutex);
 
-		perf_buffer_put(buffer);
+		perf_mmap_data_put(data);
 		free_uid(user);
 	}
 }
@@ -2689,11 +2685,11 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 	unsigned long user_locked, user_lock_limit;
 	struct user_struct *user = current_user();
 	unsigned long locked, lock_limit;
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	unsigned long vma_size;
 	unsigned long nr_pages;
 	long user_extra, extra;
-	int ret = 0, flags = 0;
+	int ret = 0;
 
 	/*
 	 * Don't allow mmap() of inherited per-task counters. This would
@@ -2710,7 +2706,7 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 	nr_pages = (vma_size / PAGE_SIZE) - 1;
 
 	/*
-	 * If we have buffer pages ensure they're a power-of-two number, so we
+	 * If we have data pages ensure they're a power-of-two number, so we
 	 * can do bitmasks instead of modulo.
 	 */
 	if (nr_pages != 0 && !is_power_of_2(nr_pages))
@@ -2724,9 +2720,9 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 
 	WARN_ON_ONCE(event->ctx->parent_ctx);
 	mutex_lock(&event->mmap_mutex);
-	if (event->buffer) {
-		if (event->buffer->nr_pages == nr_pages)
-			atomic_inc(&event->buffer->refcount);
+	if (event->data) {
+		if (event->data->nr_pages == nr_pages)
+			atomic_inc(&event->data->refcount);
 		else
 			ret = -EINVAL;
 		goto unlock;
@@ -2756,18 +2752,17 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 		goto unlock;
 	}
 
-	WARN_ON(event->buffer);
+	WARN_ON(event->data);
 
-	if (vma->vm_flags & VM_WRITE)
-		flags |= PERF_BUFFER_WRITABLE;
-
-	buffer = perf_buffer_alloc(nr_pages, event->attr.wakeup_watermark,
-				   event->cpu, flags);
-	if (!buffer) {
+	data = perf_mmap_data_alloc(event, nr_pages);
+	if (!data) {
 		ret = -ENOMEM;
 		goto unlock;
 	}
-	rcu_assign_pointer(event->buffer, buffer);
+
+	perf_mmap_data_init(event, data);
+	if (vma->vm_flags & VM_WRITE)
+		event->data->writable = 1;
 
 	atomic_long_add(user_extra, &user->locked_vm);
 	event->mmap_locked = extra;
@@ -2946,6 +2941,11 @@ __weak struct perf_callchain_entry *perf_callchain(struct pt_regs *regs)
 	return NULL;
 }
 
+__weak
+void perf_arch_fetch_caller_regs(struct pt_regs *regs, unsigned long ip, int skip)
+{
+}
+
 
 /*
  * We assume there is only KVM supporting the callbacks.
@@ -2971,15 +2971,15 @@ EXPORT_SYMBOL_GPL(perf_unregister_guest_info_callbacks);
 /*
  * Output
  */
-static bool perf_output_space(struct perf_buffer *buffer, unsigned long tail,
+static bool perf_output_space(struct perf_mmap_data *data, unsigned long tail,
 			      unsigned long offset, unsigned long head)
 {
 	unsigned long mask;
 
-	if (!buffer->writable)
+	if (!data->writable)
 		return true;
 
-	mask = perf_data_size(buffer) - 1;
+	mask = perf_data_size(data) - 1;
 
 	offset = (offset - tail) & mask;
 	head   = (head   - tail) & mask;
@@ -2992,7 +2992,7 @@ static bool perf_output_space(struct perf_buffer *buffer, unsigned long tail,
 
 static void perf_output_wakeup(struct perf_output_handle *handle)
 {
-	atomic_set(&handle->buffer->poll, POLL_IN);
+	atomic_set(&handle->data->poll, POLL_IN);
 
 	if (handle->nmi) {
 		handle->event->pending_wakeup = 1;
@@ -3012,45 +3012,45 @@ static void perf_output_wakeup(struct perf_output_handle *handle)
  */
 static void perf_output_get_handle(struct perf_output_handle *handle)
 {
-	struct perf_buffer *buffer = handle->buffer;
+	struct perf_mmap_data *data = handle->data;
 
 	preempt_disable();
-	local_inc(&buffer->nest);
-	handle->wakeup = local_read(&buffer->wakeup);
+	local_inc(&data->nest);
+	handle->wakeup = local_read(&data->wakeup);
 }
 
 static void perf_output_put_handle(struct perf_output_handle *handle)
 {
-	struct perf_buffer *buffer = handle->buffer;
+	struct perf_mmap_data *data = handle->data;
 	unsigned long head;
 
 again:
-	head = local_read(&buffer->head);
+	head = local_read(&data->head);
 
 	/*
 	 * IRQ/NMI can happen here, which means we can miss a head update.
 	 */
 
-	if (!local_dec_and_test(&buffer->nest))
+	if (!local_dec_and_test(&data->nest))
 		goto out;
 
 	/*
 	 * Publish the known good head. Rely on the full barrier implied
-	 * by atomic_dec_and_test() order the buffer->head read and this
+	 * by atomic_dec_and_test() order the data->head read and this
 	 * write.
 	 */
-	buffer->user_page->data_head = head;
+	data->user_page->data_head = head;
 
 	/*
 	 * Now check if we missed an update, rely on the (compiler)
-	 * barrier in atomic_dec_and_test() to re-read buffer->head.
+	 * barrier in atomic_dec_and_test() to re-read data->head.
 	 */
-	if (unlikely(head != local_read(&buffer->head))) {
-		local_inc(&buffer->nest);
+	if (unlikely(head != local_read(&data->head))) {
+		local_inc(&data->nest);
 		goto again;
 	}
 
-	if (handle->wakeup != local_read(&buffer->wakeup))
+	if (handle->wakeup != local_read(&data->wakeup))
 		perf_output_wakeup(handle);
 
  out:
@@ -3070,12 +3070,12 @@ __always_inline void perf_output_copy(struct perf_output_handle *handle,
 		buf += size;
 		handle->size -= size;
 		if (!handle->size) {
-			struct perf_buffer *buffer = handle->buffer;
+			struct perf_mmap_data *data = handle->data;
 
 			handle->page++;
-			handle->page &= buffer->nr_pages - 1;
-			handle->addr = buffer->data_pages[handle->page];
-			handle->size = PAGE_SIZE << page_order(buffer);
+			handle->page &= data->nr_pages - 1;
+			handle->addr = data->data_pages[handle->page];
+			handle->size = PAGE_SIZE << page_order(data);
 		}
 	} while (len);
 }
@@ -3084,7 +3084,7 @@ int perf_output_begin(struct perf_output_handle *handle,
 		      struct perf_event *event, unsigned int size,
 		      int nmi, int sample)
 {
-	struct perf_buffer *buffer;
+	struct perf_mmap_data *data;
 	unsigned long tail, offset, head;
 	int have_lost;
 	struct {
@@ -3100,19 +3100,19 @@ int perf_output_begin(struct perf_output_handle *handle,
 	if (event->parent)
 		event = event->parent;
 
-	buffer = rcu_dereference(event->buffer);
-	if (!buffer)
+	data = rcu_dereference(event->data);
+	if (!data)
 		goto out;
 
-	handle->buffer	= buffer;
+	handle->data	= data;
 	handle->event	= event;
 	handle->nmi	= nmi;
 	handle->sample	= sample;
 
-	if (!buffer->nr_pages)
+	if (!data->nr_pages)
 		goto out;
 
-	have_lost = local_read(&buffer->lost);
+	have_lost = local_read(&data->lost);
 	if (have_lost)
 		size += sizeof(lost_event);
 
@@ -3124,30 +3124,30 @@ int perf_output_begin(struct perf_output_handle *handle,
 		 * tail pointer. So that all reads will be completed before the
 		 * write is issued.
 		 */
-		tail = ACCESS_ONCE(buffer->user_page->data_tail);
+		tail = ACCESS_ONCE(data->user_page->data_tail);
 		smp_rmb();
-		offset = head = local_read(&buffer->head);
+		offset = head = local_read(&data->head);
 		head += size;
-		if (unlikely(!perf_output_space(buffer, tail, offset, head)))
+		if (unlikely(!perf_output_space(data, tail, offset, head)))
 			goto fail;
-	} while (local_cmpxchg(&buffer->head, offset, head) != offset);
+	} while (local_cmpxchg(&data->head, offset, head) != offset);
 
-	if (head - local_read(&buffer->wakeup) > buffer->watermark)
-		local_add(buffer->watermark, &buffer->wakeup);
+	if (head - local_read(&data->wakeup) > data->watermark)
+		local_add(data->watermark, &data->wakeup);
 
-	handle->page = offset >> (PAGE_SHIFT + page_order(buffer));
-	handle->page &= buffer->nr_pages - 1;
-	handle->size = offset & ((PAGE_SIZE << page_order(buffer)) - 1);
-	handle->addr = buffer->data_pages[handle->page];
+	handle->page = offset >> (PAGE_SHIFT + page_order(data));
+	handle->page &= data->nr_pages - 1;
+	handle->size = offset & ((PAGE_SIZE << page_order(data)) - 1);
+	handle->addr = data->data_pages[handle->page];
 	handle->addr += handle->size;
-	handle->size = (PAGE_SIZE << page_order(buffer)) - handle->size;
+	handle->size = (PAGE_SIZE << page_order(data)) - handle->size;
 
 	if (have_lost) {
 		lost_event.header.type = PERF_RECORD_LOST;
 		lost_event.header.misc = 0;
 		lost_event.header.size = sizeof(lost_event);
 		lost_event.id          = event->id;
-		lost_event.lost        = local_xchg(&buffer->lost, 0);
+		lost_event.lost        = local_xchg(&data->lost, 0);
 
 		perf_output_put(handle, lost_event);
 	}
@@ -3155,7 +3155,7 @@ int perf_output_begin(struct perf_output_handle *handle,
 	return 0;
 
 fail:
-	local_inc(&buffer->lost);
+	local_inc(&data->lost);
 	perf_output_put_handle(handle);
 out:
 	rcu_read_unlock();
@@ -3166,15 +3166,15 @@ out:
 void perf_output_end(struct perf_output_handle *handle)
 {
 	struct perf_event *event = handle->event;
-	struct perf_buffer *buffer = handle->buffer;
+	struct perf_mmap_data *data = handle->data;
 
 	int wakeup_events = event->attr.wakeup_events;
 
 	if (handle->sample && wakeup_events) {
-		int events = local_inc_return(&buffer->events);
+		int events = local_inc_return(&data->events);
 		if (events >= wakeup_events) {
-			local_sub(wakeup_events, &buffer->events);
-			local_inc(&buffer->wakeup);
+			local_sub(wakeup_events, &data->events);
+			local_inc(&data->wakeup);
 		}
 	}
 
@@ -3211,7 +3211,7 @@ static void perf_output_read_one(struct perf_output_handle *handle,
 	u64 values[4];
 	int n = 0;
 
-	values[n++] = perf_event_count(event);
+	values[n++] = atomic64_read(&event->count);
 	if (read_format & PERF_FORMAT_TOTAL_TIME_ENABLED) {
 		values[n++] = event->total_time_enabled +
 			atomic64_read(&event->child_total_time_enabled);
@@ -3248,7 +3248,7 @@ static void perf_output_read_group(struct perf_output_handle *handle,
 	if (leader != event)
 		leader->pmu->read(leader);
 
-	values[n++] = perf_event_count(leader);
+	values[n++] = atomic64_read(&leader->count);
 	if (read_format & PERF_FORMAT_ID)
 		values[n++] = primary_event_id(leader);
 
@@ -3260,7 +3260,7 @@ static void perf_output_read_group(struct perf_output_handle *handle,
 		if (sub != event)
 			sub->pmu->read(sub);
 
-		values[n++] = perf_event_count(sub);
+		values[n++] = atomic64_read(&sub->count);
 		if (read_format & PERF_FORMAT_ID)
 			values[n++] = primary_event_id(sub);
 
@@ -3491,7 +3491,7 @@ perf_event_read_event(struct perf_event *event,
 /*
  * task tracking -- fork/exit
  *
- * enabled by: attr.comm | attr.mmap | attr.mmap_data | attr.task
+ * enabled by: attr.comm | attr.mmap | attr.task
  */
 
 struct perf_task_event {
@@ -3541,8 +3541,7 @@ static int perf_event_task_match(struct perf_event *event)
 	if (event->cpu != -1 && event->cpu != smp_processor_id())
 		return 0;
 
-	if (event->attr.comm || event->attr.mmap ||
-	    event->attr.mmap_data || event->attr.task)
+	if (event->attr.comm || event->attr.mmap || event->attr.task)
 		return 1;
 
 	return 0;
@@ -3767,8 +3766,7 @@ static void perf_event_mmap_output(struct perf_event *event,
 }
 
 static int perf_event_mmap_match(struct perf_event *event,
-				   struct perf_mmap_event *mmap_event,
-				   int executable)
+				   struct perf_mmap_event *mmap_event)
 {
 	if (event->state < PERF_EVENT_STATE_INACTIVE)
 		return 0;
@@ -3776,21 +3774,19 @@ static int perf_event_mmap_match(struct perf_event *event,
 	if (event->cpu != -1 && event->cpu != smp_processor_id())
 		return 0;
 
-	if ((!executable && event->attr.mmap_data) ||
-	    (executable && event->attr.mmap))
+	if (event->attr.mmap)
 		return 1;
 
 	return 0;
 }
 
 static void perf_event_mmap_ctx(struct perf_event_context *ctx,
-				  struct perf_mmap_event *mmap_event,
-				  int executable)
+				  struct perf_mmap_event *mmap_event)
 {
 	struct perf_event *event;
 
 	list_for_each_entry_rcu(event, &ctx->event_list, event_entry) {
-		if (perf_event_mmap_match(event, mmap_event, executable))
+		if (perf_event_mmap_match(event, mmap_event))
 			perf_event_mmap_output(event, mmap_event);
 	}
 }
@@ -3834,14 +3830,6 @@ static void perf_event_mmap_event(struct perf_mmap_event *mmap_event)
 		if (!vma->vm_mm) {
 			name = strncpy(tmp, "[vdso]", sizeof(tmp));
 			goto got_name;
-		} else if (vma->vm_start <= vma->vm_mm->start_brk &&
-				vma->vm_end >= vma->vm_mm->brk) {
-			name = strncpy(tmp, "[heap]", sizeof(tmp));
-			goto got_name;
-		} else if (vma->vm_start <= vma->vm_mm->start_stack &&
-				vma->vm_end >= vma->vm_mm->start_stack) {
-			name = strncpy(tmp, "[stack]", sizeof(tmp));
-			goto got_name;
 		}
 
 		name = strncpy(tmp, "//anon", sizeof(tmp));
@@ -3858,17 +3846,17 @@ got_name:
 
 	rcu_read_lock();
 	cpuctx = &get_cpu_var(perf_cpu_context);
-	perf_event_mmap_ctx(&cpuctx->ctx, mmap_event, vma->vm_flags & VM_EXEC);
+	perf_event_mmap_ctx(&cpuctx->ctx, mmap_event);
 	ctx = rcu_dereference(current->perf_event_ctxp);
 	if (ctx)
-		perf_event_mmap_ctx(ctx, mmap_event, vma->vm_flags & VM_EXEC);
+		perf_event_mmap_ctx(ctx, mmap_event);
 	put_cpu_var(perf_cpu_context);
 	rcu_read_unlock();
 
 	kfree(buf);
 }
 
-void perf_event_mmap(struct vm_area_struct *vma)
+void __perf_event_mmap(struct vm_area_struct *vma)
 {
 	struct perf_mmap_event mmap_event;
 
@@ -4030,14 +4018,14 @@ static u64 perf_swevent_set_period(struct perf_event *event)
 	hwc->last_period = hwc->sample_period;
 
 again:
-	old = val = local64_read(&hwc->period_left);
+	old = val = atomic64_read(&hwc->period_left);
 	if (val < 0)
 		return 0;
 
 	nr = div64_u64(period + val, period);
 	offset = nr * period;
 	val -= offset;
-	if (local64_cmpxchg(&hwc->period_left, old, val) != old)
+	if (atomic64_cmpxchg(&hwc->period_left, old, val) != old)
 		goto again;
 
 	return nr;
@@ -4076,7 +4064,7 @@ static void perf_swevent_add(struct perf_event *event, u64 nr,
 {
 	struct hw_perf_event *hwc = &event->hw;
 
-	local64_add(nr, &event->count);
+	atomic64_add(nr, &event->count);
 
 	if (!regs)
 		return;
@@ -4087,7 +4075,7 @@ static void perf_swevent_add(struct perf_event *event, u64 nr,
 	if (nr == 1 && hwc->sample_period == 1 && !event->attr.freq)
 		return perf_swevent_overflow(event, 1, nmi, data, regs);
 
-	if (local64_add_negative(nr, &hwc->period_left))
+	if (atomic64_add_negative(nr, &hwc->period_left))
 		return;
 
 	perf_swevent_overflow(event, 0, nmi, data, regs);
@@ -4225,12 +4213,14 @@ int perf_swevent_get_recursion_context(void)
 }
 EXPORT_SYMBOL_GPL(perf_swevent_get_recursion_context);
 
-void inline perf_swevent_put_recursion_context(int rctx)
+void perf_swevent_put_recursion_context(int rctx)
 {
 	struct perf_cpu_context *cpuctx = &__get_cpu_var(perf_cpu_context);
 	barrier();
 	cpuctx->recursion[rctx]--;
 }
+EXPORT_SYMBOL_GPL(perf_swevent_put_recursion_context);
+
 
 void __perf_sw_event(u32 event_id, u64 nr, int nmi,
 			    struct pt_regs *regs, u64 addr)
@@ -4378,8 +4368,8 @@ static void cpu_clock_perf_event_update(struct perf_event *event)
 	u64 now;
 
 	now = cpu_clock(cpu);
-	prev = local64_xchg(&event->hw.prev_count, now);
-	local64_add(now - prev, &event->count);
+	prev = atomic64_xchg(&event->hw.prev_count, now);
+	atomic64_add(now - prev, &event->count);
 }
 
 static int cpu_clock_perf_event_enable(struct perf_event *event)
@@ -4387,7 +4377,7 @@ static int cpu_clock_perf_event_enable(struct perf_event *event)
 	struct hw_perf_event *hwc = &event->hw;
 	int cpu = raw_smp_processor_id();
 
-	local64_set(&hwc->prev_count, cpu_clock(cpu));
+	atomic64_set(&hwc->prev_count, cpu_clock(cpu));
 	perf_swevent_start_hrtimer(event);
 
 	return 0;
@@ -4419,9 +4409,9 @@ static void task_clock_perf_event_update(struct perf_event *event, u64 now)
 	u64 prev;
 	s64 delta;
 
-	prev = local64_xchg(&event->hw.prev_count, now);
+	prev = atomic64_xchg(&event->hw.prev_count, now);
 	delta = now - prev;
-	local64_add(delta, &event->count);
+	atomic64_add(delta, &event->count);
 }
 
 static int task_clock_perf_event_enable(struct perf_event *event)
@@ -4431,7 +4421,7 @@ static int task_clock_perf_event_enable(struct perf_event *event)
 
 	now = event->ctx->time;
 
-	local64_set(&hwc->prev_count, now);
+	atomic64_set(&hwc->prev_count, now);
 
 	perf_swevent_start_hrtimer(event);
 
@@ -4611,7 +4601,7 @@ static int perf_tp_event_match(struct perf_event *event,
 }
 
 void perf_tp_event(u64 addr, u64 count, void *record, int entry_size,
-		   struct pt_regs *regs, struct hlist_head *head, int rctx)
+		   struct pt_regs *regs, struct hlist_head *head)
 {
 	struct perf_sample_data data;
 	struct perf_event *event;
@@ -4625,12 +4615,12 @@ void perf_tp_event(u64 addr, u64 count, void *record, int entry_size,
 	perf_sample_data_init(&data, addr);
 	data.raw = &raw;
 
+	rcu_read_lock();
 	hlist_for_each_entry_rcu(event, node, head, hlist_entry) {
 		if (perf_tp_event_match(event, &data, regs))
 			perf_swevent_add(event, count, 1, &data, regs);
 	}
-
-	perf_swevent_put_recursion_context(rctx);
+	rcu_read_unlock();
 }
 EXPORT_SYMBOL_GPL(perf_tp_event);
 
@@ -4874,7 +4864,7 @@ perf_event_alloc(struct perf_event_attr *attr,
 		hwc->sample_period = 1;
 	hwc->last_period = hwc->sample_period;
 
-	local64_set(&hwc->period_left, hwc->sample_period);
+	atomic64_set(&hwc->period_left, hwc->sample_period);
 
 	/*
 	 * we currently do not support PERF_FORMAT_GROUP on inherited events
@@ -4923,7 +4913,7 @@ done:
 
 	if (!event->parent) {
 		atomic_inc(&nr_events);
-		if (event->attr.mmap || event->attr.mmap_data)
+		if (event->attr.mmap)
 			atomic_inc(&nr_mmap_events);
 		if (event->attr.comm)
 			atomic_inc(&nr_comm_events);
@@ -5017,7 +5007,7 @@ err_size:
 static int
 perf_event_set_output(struct perf_event *event, struct perf_event *output_event)
 {
-	struct perf_buffer *buffer = NULL, *old_buffer = NULL;
+	struct perf_mmap_data *data = NULL, *old_data = NULL;
 	int ret = -EINVAL;
 
 	if (!output_event)
@@ -5047,19 +5037,19 @@ set:
 
 	if (output_event) {
 		/* get the buffer we want to redirect to */
-		buffer = perf_buffer_get(output_event);
-		if (!buffer)
+		data = perf_mmap_data_get(output_event);
+		if (!data)
 			goto unlock;
 	}
 
-	old_buffer = event->buffer;
-	rcu_assign_pointer(event->buffer, buffer);
+	old_data = event->data;
+	rcu_assign_pointer(event->data, data);
 	ret = 0;
 unlock:
 	mutex_unlock(&event->mmap_mutex);
 
-	if (old_buffer)
-		perf_buffer_put(old_buffer);
+	if (old_data)
+		perf_mmap_data_put(old_data);
 out:
 	return ret;
 }
@@ -5308,7 +5298,7 @@ inherit_event(struct perf_event *parent_event,
 		hwc->sample_period = sample_period;
 		hwc->last_period   = sample_period;
 
-		local64_set(&hwc->period_left, sample_period);
+		atomic64_set(&hwc->period_left, sample_period);
 	}
 
 	child_event->overflow_handler = parent_event->overflow_handler;
@@ -5369,12 +5359,12 @@ static void sync_child_event(struct perf_event *child_event,
 	if (child_event->attr.inherit_stat)
 		perf_event_read_event(child_event, child);
 
-	child_val = perf_event_count(child_event);
+	child_val = atomic64_read(&child_event->count);
 
 	/*
 	 * Add back the child's count to the parent's count:
 	 */
-	atomic64_add(child_val, &parent_event->child_count);
+	atomic64_add(child_val, &parent_event->count);
 	atomic64_add(child_event->total_time_enabled,
 		     &parent_event->child_total_time_enabled);
 	atomic64_add(child_event->total_time_running,

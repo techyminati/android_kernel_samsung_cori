@@ -65,6 +65,7 @@
 #include <linux/binfmts.h>
 #include <linux/highmem.h>
 #include <linux/syscalls.h>
+#include <linux/inotify.h>
 #include <linux/capability.h>
 #include <linux/fs_struct.h>
 
@@ -548,8 +549,9 @@ static int audit_filter_rules(struct task_struct *tsk,
 			}
 			break;
 		case AUDIT_WATCH:
-			if (name)
-				result = audit_watch_compare(rule->watch, name->ino, name->dev);
+			if (name && audit_watch_inode(rule->watch) != (unsigned long)-1)
+				result = (name->dev == audit_watch_dev(rule->watch) &&
+					  name->ino == audit_watch_inode(rule->watch));
 			break;
 		case AUDIT_DIR:
 			if (ctx)
@@ -1724,7 +1726,7 @@ static inline void handle_one(const struct inode *inode)
 	struct audit_tree_refs *p;
 	struct audit_chunk *chunk;
 	int count;
-	if (likely(hlist_empty(&inode->i_fsnotify_marks)))
+	if (likely(list_empty(&inode->inotify_watches)))
 		return;
 	context = current->audit_context;
 	p = context->trees;
@@ -1767,7 +1769,7 @@ retry:
 	seq = read_seqbegin(&rename_lock);
 	for(;;) {
 		struct inode *inode = d->d_inode;
-		if (inode && unlikely(!hlist_empty(&inode->i_fsnotify_marks))) {
+		if (inode && unlikely(!list_empty(&inode->inotify_watches))) {
 			struct audit_chunk *chunk;
 			chunk = audit_tree_lookup(inode);
 			if (chunk) {
@@ -1835,8 +1837,13 @@ void __audit_getname(const char *name)
 	context->names[context->name_count].ino  = (unsigned long)-1;
 	context->names[context->name_count].osid = 0;
 	++context->name_count;
-	if (!context->pwd.dentry)
-		get_fs_pwd(current->fs, &context->pwd);
+	if (!context->pwd.dentry) {
+		read_lock(&current->fs->lock);
+		context->pwd = current->fs->pwd;
+		path_get(&current->fs->pwd);
+		read_unlock(&current->fs->lock);
+	}
+
 }
 
 /* audit_putname - intercept a putname request

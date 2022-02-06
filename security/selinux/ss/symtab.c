@@ -36,7 +36,7 @@ int symtab_init(struct symtab *s, unsigned int size)
 {
 	s->table = hashtab_create(symhash, symcmp, size);
 	if (!s->table)
-		return -ENOMEM;
+		return -1;
 	s->nprim = 0;
 	return 0;
 }

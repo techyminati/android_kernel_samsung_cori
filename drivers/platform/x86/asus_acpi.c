@@ -1330,9 +1330,6 @@ static int asus_hotk_get_info(void)
 			hotk->model = P30;
 			printk(KERN_NOTICE
 			       "  Samsung P30 detected, supported\n");
-			hotk->methods = &model_conf[hotk->model];
-			kfree(model);
-			return 0;
 		} else {
 			hotk->model = M2E;
 			printk(KERN_NOTICE "  unsupported model %s, trying "
@@ -1342,6 +1339,8 @@ static int asus_hotk_get_info(void)
 			kfree(model);
 			return -ENODEV;
 		}
+		hotk->methods = &model_conf[hotk->model];
+		return AE_OK;
 	}
 	hotk->methods = &model_conf[hotk->model];
 	printk(KERN_NOTICE "  %s model detected, supported\n", string);
@@ -1375,7 +1374,7 @@ static int asus_hotk_get_info(void)
 
 	kfree(model);
 
-	return 0;
+	return AE_OK;
 }
 
 static int asus_hotk_check(void)

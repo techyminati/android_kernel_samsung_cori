@@ -2193,7 +2193,7 @@ static void mxser_transmit_chars(struct tty_struct *tty, struct mxser_port *port
 	port->mon_data.up_txcnt += (cnt - port->xmit_cnt);
 	port->icount.tx += (cnt - port->xmit_cnt);
 
-	if (port->xmit_cnt < WAKEUP_CHARS)
+	if (port->xmit_cnt < WAKEUP_CHARS && tty)
 		tty_wakeup(tty);
 
 	if (port->xmit_cnt <= 0) {

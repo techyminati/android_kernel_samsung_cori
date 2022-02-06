@@ -642,7 +642,6 @@ static int __devinit lm8323_probe(struct i2c_client *client,
 	struct lm8323_platform_data *pdata = client->dev.platform_data;
 	struct input_dev *idev;
 	struct lm8323_chip *lm;
-	int pwm;
 	int i, err;
 	unsigned long tmo;
 	u8 data[2];
@@ -711,9 +710,8 @@ static int __devinit lm8323_probe(struct i2c_client *client,
 		goto fail1;
 	}
 
-	for (pwm = 0; pwm < LM8323_NUM_PWMS; pwm++) {
-		err = init_pwm(lm, pwm + 1, &client->dev,
-			       pdata->pwm_names[pwm]);
+	for (i = 0; i < LM8323_NUM_PWMS; i++) {
+		err = init_pwm(lm, i + 1, &client->dev, pdata->pwm_names[i]);
 		if (err < 0)
 			goto fail2;
 	}
@@ -766,9 +764,9 @@ fail4:
 fail3:
 	device_remove_file(&client->dev, &dev_attr_disable_kp);
 fail2:
-	while (--pwm >= 0)
-		if (lm->pwm[pwm].enabled)
-			led_classdev_unregister(&lm->pwm[pwm].cdev);
+	while (--i >= 0)
+		if (lm->pwm[i].enabled)
+			led_classdev_unregister(&lm->pwm[i].cdev);
 fail1:
 	input_free_device(idev);
 	kfree(lm);

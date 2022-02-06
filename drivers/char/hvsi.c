@@ -1255,7 +1255,7 @@ static int __init hvsi_console_setup(struct console *console, char *options)
 	return 0;
 }
 
-static struct console hvsi_console = {
+static struct console hvsi_con_driver = {
 	.name		= "hvsi",
 	.write		= hvsi_console_print,
 	.device		= hvsi_console_device,
@@ -1308,7 +1308,7 @@ static int __init hvsi_console_init(void)
 	}
 
 	if (hvsi_count)
-		register_console(&hvsi_console);
+		register_console(&hvsi_con_driver);
 	return 0;
 }
 console_initcall(hvsi_console_init);

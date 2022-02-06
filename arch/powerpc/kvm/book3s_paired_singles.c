@@ -159,7 +159,10 @@
 
 static inline void kvmppc_sync_qpr(struct kvm_vcpu *vcpu, int rt)
 {
-	kvm_cvt_df(&vcpu->arch.fpr[rt], &vcpu->arch.qpr[rt], &vcpu->arch.fpscr);
+	struct thread_struct t;
+
+	t.fpscr.val = vcpu->arch.fpscr;
+	cvt_df((double*)&vcpu->arch.fpr[rt], (float*)&vcpu->arch.qpr[rt], &t);
 }
 
 static void kvmppc_inject_pf(struct kvm_vcpu *vcpu, ulong eaddr, bool is_store)
@@ -180,12 +183,15 @@ static int kvmppc_emulate_fpr_load(struct kvm_run *run, struct kvm_vcpu *vcpu,
 				   int rs, ulong addr, int ls_type)
 {
 	int emulated = EMULATE_FAIL;
+	struct thread_struct t;
 	int r;
 	char tmp[8];
 	int len = sizeof(u32);
 
 	if (ls_type == FPU_LS_DOUBLE)
 		len = sizeof(u64);
+
+	t.fpscr.val = vcpu->arch.fpscr;
 
 	/* read from memory */
 	r = kvmppc_ld(vcpu, &addr, len, tmp, true);
@@ -204,7 +210,7 @@ static int kvmppc_emulate_fpr_load(struct kvm_run *run, struct kvm_vcpu *vcpu,
 	/* put in registers */
 	switch (ls_type) {
 	case FPU_LS_SINGLE:
-		kvm_cvt_fd((u32*)tmp, &vcpu->arch.fpr[rs], &vcpu->arch.fpscr);
+		cvt_fd((float*)tmp, (double*)&vcpu->arch.fpr[rs], &t);
 		vcpu->arch.qpr[rs] = *((u32*)tmp);
 		break;
 	case FPU_LS_DOUBLE:
@@ -223,14 +229,17 @@ static int kvmppc_emulate_fpr_store(struct kvm_run *run, struct kvm_vcpu *vcpu,
 				    int rs, ulong addr, int ls_type)
 {
 	int emulated = EMULATE_FAIL;
+	struct thread_struct t;
 	int r;
 	char tmp[8];
 	u64 val;
 	int len;
 
+	t.fpscr.val = vcpu->arch.fpscr;
+
 	switch (ls_type) {
 	case FPU_LS_SINGLE:
-		kvm_cvt_df(&vcpu->arch.fpr[rs], (u32*)tmp, &vcpu->arch.fpscr);
+		cvt_df((double*)&vcpu->arch.fpr[rs], (float*)tmp, &t);
 		val = *((u32*)tmp);
 		len = sizeof(u32);
 		break;
@@ -269,9 +278,12 @@ static int kvmppc_emulate_psq_load(struct kvm_run *run, struct kvm_vcpu *vcpu,
 				   int rs, ulong addr, bool w, int i)
 {
 	int emulated = EMULATE_FAIL;
+	struct thread_struct t;
 	int r;
 	float one = 1.0;
 	u32 tmp[2];
+
+	t.fpscr.val = vcpu->arch.fpscr;
 
 	/* read from memory */
 	if (w) {
@@ -296,7 +308,7 @@ static int kvmppc_emulate_psq_load(struct kvm_run *run, struct kvm_vcpu *vcpu,
 	emulated = EMULATE_DONE;
 
 	/* put in registers */
-	kvm_cvt_fd(&tmp[0], &vcpu->arch.fpr[rs], &vcpu->arch.fpscr);
+	cvt_fd((float*)&tmp[0], (double*)&vcpu->arch.fpr[rs], &t);
 	vcpu->arch.qpr[rs] = tmp[1];
 
 	dprintk(KERN_INFO "KVM: PSQ_LD [0x%x, 0x%x] at 0x%lx (%d)\n", tmp[0],
@@ -310,11 +322,14 @@ static int kvmppc_emulate_psq_store(struct kvm_run *run, struct kvm_vcpu *vcpu,
 				    int rs, ulong addr, bool w, int i)
 {
 	int emulated = EMULATE_FAIL;
+	struct thread_struct t;
 	int r;
 	u32 tmp[2];
 	int len = w ? sizeof(u32) : sizeof(u64);
 
-	kvm_cvt_df(&vcpu->arch.fpr[rs], &tmp[0], &vcpu->arch.fpscr);
+	t.fpscr.val = vcpu->arch.fpscr;
+
+	cvt_df((double*)&vcpu->arch.fpr[rs], (float*)&tmp[0], &t);
 	tmp[1] = vcpu->arch.qpr[rs];
 
 	r = kvmppc_st(vcpu, &addr, len, tmp, true);
@@ -502,7 +517,7 @@ static int get_d_signext(u32 inst)
 static int kvmppc_ps_three_in(struct kvm_vcpu *vcpu, bool rc,
 				      int reg_out, int reg_in1, int reg_in2,
 				      int reg_in3, int scalar,
-				      void (*func)(u64 *fpscr,
+				      void (*func)(struct thread_struct *t,
 						 u32 *dst, u32 *src1,
 						 u32 *src2, u32 *src3))
 {
@@ -511,25 +526,27 @@ static int kvmppc_ps_three_in(struct kvm_vcpu *vcpu, bool rc,
 	u32 ps0_out;
 	u32 ps0_in1, ps0_in2, ps0_in3;
 	u32 ps1_in1, ps1_in2, ps1_in3;
+	struct thread_struct t;
+	t.fpscr.val = vcpu->arch.fpscr;
 
 	/* RC */
 	WARN_ON(rc);
 
 	/* PS0 */
-	kvm_cvt_df(&fpr[reg_in1], &ps0_in1, &vcpu->arch.fpscr);
-	kvm_cvt_df(&fpr[reg_in2], &ps0_in2, &vcpu->arch.fpscr);
-	kvm_cvt_df(&fpr[reg_in3], &ps0_in3, &vcpu->arch.fpscr);
+	cvt_df((double*)&fpr[reg_in1], (float*)&ps0_in1, &t);
+	cvt_df((double*)&fpr[reg_in2], (float*)&ps0_in2, &t);
+	cvt_df((double*)&fpr[reg_in3], (float*)&ps0_in3, &t);
 
 	if (scalar & SCALAR_LOW)
 		ps0_in2 = qpr[reg_in2];
 
-	func(&vcpu->arch.fpscr, &ps0_out, &ps0_in1, &ps0_in2, &ps0_in3);
+	func(&t, &ps0_out, &ps0_in1, &ps0_in2, &ps0_in3);
 
 	dprintk(KERN_INFO "PS3 ps0 -> f(0x%x, 0x%x, 0x%x) = 0x%x\n",
 			  ps0_in1, ps0_in2, ps0_in3, ps0_out);
 
 	if (!(scalar & SCALAR_NO_PS0))
-		kvm_cvt_fd(&ps0_out, &fpr[reg_out], &vcpu->arch.fpscr);
+		cvt_fd((float*)&ps0_out, (double*)&fpr[reg_out], &t);
 
 	/* PS1 */
 	ps1_in1 = qpr[reg_in1];
@@ -540,7 +557,7 @@ static int kvmppc_ps_three_in(struct kvm_vcpu *vcpu, bool rc,
 		ps1_in2 = ps0_in2;
 
 	if (!(scalar & SCALAR_NO_PS1))
-		func(&vcpu->arch.fpscr, &qpr[reg_out], &ps1_in1, &ps1_in2, &ps1_in3);
+		func(&t, &qpr[reg_out], &ps1_in1, &ps1_in2, &ps1_in3);
 
 	dprintk(KERN_INFO "PS3 ps1 -> f(0x%x, 0x%x, 0x%x) = 0x%x\n",
 			  ps1_in1, ps1_in2, ps1_in3, qpr[reg_out]);
@@ -551,7 +568,7 @@ static int kvmppc_ps_three_in(struct kvm_vcpu *vcpu, bool rc,
 static int kvmppc_ps_two_in(struct kvm_vcpu *vcpu, bool rc,
 				    int reg_out, int reg_in1, int reg_in2,
 				    int scalar,
-				    void (*func)(u64 *fpscr,
+				    void (*func)(struct thread_struct *t,
 						 u32 *dst, u32 *src1,
 						 u32 *src2))
 {
@@ -561,25 +578,27 @@ static int kvmppc_ps_two_in(struct kvm_vcpu *vcpu, bool rc,
 	u32 ps0_in1, ps0_in2;
 	u32 ps1_out;
 	u32 ps1_in1, ps1_in2;
+	struct thread_struct t;
+	t.fpscr.val = vcpu->arch.fpscr;
 
 	/* RC */
 	WARN_ON(rc);
 
 	/* PS0 */
-	kvm_cvt_df(&fpr[reg_in1], &ps0_in1, &vcpu->arch.fpscr);
+	cvt_df((double*)&fpr[reg_in1], (float*)&ps0_in1, &t);
 
 	if (scalar & SCALAR_LOW)
 		ps0_in2 = qpr[reg_in2];
 	else
-		kvm_cvt_df(&fpr[reg_in2], &ps0_in2, &vcpu->arch.fpscr);
+		cvt_df((double*)&fpr[reg_in2], (float*)&ps0_in2, &t);
 
-	func(&vcpu->arch.fpscr, &ps0_out, &ps0_in1, &ps0_in2);
+	func(&t, &ps0_out, &ps0_in1, &ps0_in2);
 
 	if (!(scalar & SCALAR_NO_PS0)) {
 		dprintk(KERN_INFO "PS2 ps0 -> f(0x%x, 0x%x) = 0x%x\n",
 				  ps0_in1, ps0_in2, ps0_out);
 
-		kvm_cvt_fd(&ps0_out, &fpr[reg_out], &vcpu->arch.fpscr);
+		cvt_fd((float*)&ps0_out, (double*)&fpr[reg_out], &t);
 	}
 
 	/* PS1 */
@@ -589,7 +608,7 @@ static int kvmppc_ps_two_in(struct kvm_vcpu *vcpu, bool rc,
 	if (scalar & SCALAR_HIGH)
 		ps1_in2 = ps0_in2;
 
-	func(&vcpu->arch.fpscr, &ps1_out, &ps1_in1, &ps1_in2);
+	func(&t, &ps1_out, &ps1_in1, &ps1_in2);
 
 	if (!(scalar & SCALAR_NO_PS1)) {
 		qpr[reg_out] = ps1_out;
@@ -603,29 +622,31 @@ static int kvmppc_ps_two_in(struct kvm_vcpu *vcpu, bool rc,
 
 static int kvmppc_ps_one_in(struct kvm_vcpu *vcpu, bool rc,
 				    int reg_out, int reg_in,
-				    void (*func)(u64 *t,
+				    void (*func)(struct thread_struct *t,
 						 u32 *dst, u32 *src1))
 {
 	u32 *qpr = vcpu->arch.qpr;
 	u64 *fpr = vcpu->arch.fpr;
 	u32 ps0_out, ps0_in;
 	u32 ps1_in;
+	struct thread_struct t;
+	t.fpscr.val = vcpu->arch.fpscr;
 
 	/* RC */
 	WARN_ON(rc);
 
 	/* PS0 */
-	kvm_cvt_df(&fpr[reg_in], &ps0_in, &vcpu->arch.fpscr);
-	func(&vcpu->arch.fpscr, &ps0_out, &ps0_in);
+	cvt_df((double*)&fpr[reg_in], (float*)&ps0_in, &t);
+	func(&t, &ps0_out, &ps0_in);
 
 	dprintk(KERN_INFO "PS1 ps0 -> f(0x%x) = 0x%x\n",
 			  ps0_in, ps0_out);
 
-	kvm_cvt_fd(&ps0_out, &fpr[reg_out], &vcpu->arch.fpscr);
+	cvt_fd((float*)&ps0_out, (double*)&fpr[reg_out], &t);
 
 	/* PS1 */
 	ps1_in = qpr[reg_in];
-	func(&vcpu->arch.fpscr, &qpr[reg_out], &ps1_in);
+	func(&t, &qpr[reg_out], &ps1_in);
 
 	dprintk(KERN_INFO "PS1 ps1 -> f(0x%x) = 0x%x\n",
 			  ps1_in, qpr[reg_out]);
@@ -651,9 +672,12 @@ int kvmppc_emulate_paired_single(struct kvm_run *run, struct kvm_vcpu *vcpu)
 
 	bool rcomp = (inst & 1) ? true : false;
 	u32 cr = kvmppc_get_cr(vcpu);
+	struct thread_struct t;
 #ifdef DEBUG
 	int i;
 #endif
+
+	t.fpscr.val = vcpu->arch.fpscr;
 
 	if (!kvmppc_inst_is_paired_single(vcpu, inst))
 		return EMULATE_FAIL;
@@ -671,7 +695,7 @@ int kvmppc_emulate_paired_single(struct kvm_run *run, struct kvm_vcpu *vcpu)
 #ifdef DEBUG
 	for (i = 0; i < ARRAY_SIZE(vcpu->arch.fpr); i++) {
 		u32 f;
-		kvm_cvt_df(&vcpu->arch.fpr[i], &f, &vcpu->arch.fpscr);
+		cvt_df((double*)&vcpu->arch.fpr[i], (float*)&f, &t);
 		dprintk(KERN_INFO "FPR[%d] = 0x%x / 0x%llx    QPR[%d] = 0x%x\n",
 			i, f, vcpu->arch.fpr[i], i, vcpu->arch.qpr[i]);
 	}
@@ -795,9 +819,8 @@ int kvmppc_emulate_paired_single(struct kvm_run *run, struct kvm_vcpu *vcpu)
 			WARN_ON(rcomp);
 			vcpu->arch.fpr[ax_rd] = vcpu->arch.fpr[ax_ra];
 			/* vcpu->arch.qpr[ax_rd] = vcpu->arch.fpr[ax_rb]; */
-			kvm_cvt_df(&vcpu->arch.fpr[ax_rb],
-				   &vcpu->arch.qpr[ax_rd],
-				   &vcpu->arch.fpscr);
+			cvt_df((double*)&vcpu->arch.fpr[ax_rb],
+			       (float*)&vcpu->arch.qpr[ax_rd], &t);
 			break;
 		case OP_4X_PS_MERGE01:
 			WARN_ON(rcomp);
@@ -807,20 +830,17 @@ int kvmppc_emulate_paired_single(struct kvm_run *run, struct kvm_vcpu *vcpu)
 		case OP_4X_PS_MERGE10:
 			WARN_ON(rcomp);
 			/* vcpu->arch.fpr[ax_rd] = vcpu->arch.qpr[ax_ra]; */
-			kvm_cvt_fd(&vcpu->arch.qpr[ax_ra],
-				   &vcpu->arch.fpr[ax_rd],
-				   &vcpu->arch.fpscr);
+			cvt_fd((float*)&vcpu->arch.qpr[ax_ra],
+			       (double*)&vcpu->arch.fpr[ax_rd], &t);
 			/* vcpu->arch.qpr[ax_rd] = vcpu->arch.fpr[ax_rb]; */
-			kvm_cvt_df(&vcpu->arch.fpr[ax_rb],
-				   &vcpu->arch.qpr[ax_rd],
-				   &vcpu->arch.fpscr);
+			cvt_df((double*)&vcpu->arch.fpr[ax_rb],
+			       (float*)&vcpu->arch.qpr[ax_rd], &t);
 			break;
 		case OP_4X_PS_MERGE11:
 			WARN_ON(rcomp);
 			/* vcpu->arch.fpr[ax_rd] = vcpu->arch.qpr[ax_ra]; */
-			kvm_cvt_fd(&vcpu->arch.qpr[ax_ra],
-				   &vcpu->arch.fpr[ax_rd],
-				   &vcpu->arch.fpscr);
+			cvt_fd((float*)&vcpu->arch.qpr[ax_ra],
+			       (double*)&vcpu->arch.fpr[ax_rd], &t);
 			vcpu->arch.qpr[ax_rd] = vcpu->arch.qpr[ax_rb];
 			break;
 		}
@@ -1255,7 +1275,7 @@ int kvmppc_emulate_paired_single(struct kvm_run *run, struct kvm_vcpu *vcpu)
 #ifdef DEBUG
 	for (i = 0; i < ARRAY_SIZE(vcpu->arch.fpr); i++) {
 		u32 f;
-		kvm_cvt_df(&vcpu->arch.fpr[i], &f, &vcpu->arch.fpscr);
+		cvt_df((double*)&vcpu->arch.fpr[i], (float*)&f, &t);
 		dprintk(KERN_INFO "FPR[%d] = 0x%x\n", i, f);
 	}
 #endif

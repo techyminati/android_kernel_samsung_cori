@@ -88,6 +88,19 @@ config VT_HW_CONSOLE_BINDING
 	 information. For framebuffer console users, please refer to
 	 <file:Documentation/fb/fbcon.txt>.
 
+config DEVMEM
+	bool "Memory device driver"
+	default y
+	help
+	  The memory driver provides two character devices, mem and kmem, which
+	  provide access to the system's memory. The mem device is a view of
+	  physical memory, and each byte in the device corresponds to the
+	  matching physical address. The kmem device is the same as mem, but
+	  the addresses correspond to the kernel's virtual address space rather
+	  than physical memory. These devices are standard parts of a Linux
+	  system and most users should say Y here. You might say N if very
+	  security conscience or memory is tight.
+
 config DEVKMEM
 	bool "/dev/kmem virtual device support"
 	default y
@@ -1002,7 +1015,7 @@ config SCx200_GPIO
 
 config PC8736x_GPIO
 	tristate "NatSemi PC8736x GPIO Support"
-	depends on X86_32
+	depends on X86
 	default SCx200_GPIO	# mostly N
 	select NSC_GPIO		# needed for support routines
 	help
@@ -1113,11 +1126,19 @@ config TELCLOCK
 	  /sys/devices/platform/telco_clock, with a number of files for
 	  controlling the behavior of this hardware.
 
+config BCOMVIB
+	tristate "BroadCom Vibrator testing menu"
+	default y
+
 config DEVPORT
 	bool
 	depends on !M68K
 	depends on ISA || PCI
 	default y
+
+config DCC_TTY
+	tristate "DCC tty driver"
+	depends on ARM
 
 source "drivers/s390/char/Kconfig"
 
@@ -1131,3 +1152,6 @@ config RAMOOPS
 
 endmenu
 
+if ARCH_BCM116X || ARCH_BCM215XX
+source "drivers/char/broadcom/Kconfig"
+endif

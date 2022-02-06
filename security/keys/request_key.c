@@ -144,7 +144,6 @@ static int call_sbin_request_key(struct key_construction *cons,
 	prkey = 0;
 	if (cred->tgcred->process_keyring)
 		prkey = cred->tgcred->process_keyring->serial;
-	sprintf(keyring_str[1], "%d", prkey);
 
 	rcu_read_lock();
 	session = rcu_dereference(cred->tgcred->session_keyring);
@@ -537,8 +536,6 @@ int wait_for_key_construction(struct key *key, bool intr)
 			  intr ? TASK_INTERRUPTIBLE : TASK_UNINTERRUPTIBLE);
 	if (ret < 0)
 		return ret;
-	if (test_bit(KEY_FLAG_NEGATIVE, &key->flags))
-		return -ENOKEY;
 	return key_validate(key);
 }
 EXPORT_SYMBOL(wait_for_key_construction);

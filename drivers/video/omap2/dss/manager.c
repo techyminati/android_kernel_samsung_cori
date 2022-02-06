@@ -440,10 +440,6 @@ struct manager_cache_data {
 
 	/* manual update region */
 	u16 x, y, w, h;
-
-	/* enlarge the update area if the update area contains scaled
-	 * overlays */
-	bool enlarge_update_area;
 };
 
 static struct {
@@ -529,7 +525,7 @@ static int dss_mgr_wait_for_go(struct omap_overlay_manager *mgr)
 	int i;
 	struct omap_dss_device *dssdev = mgr->device;
 
-	if (!dssdev || dssdev->state != OMAP_DSS_DISPLAY_ACTIVE)
+	if (!dssdev)
 		return 0;
 
 	if (dssdev->type == OMAP_DISPLAY_TYPE_VENC) {
@@ -600,13 +596,10 @@ int dss_mgr_wait_for_go_ovl(struct omap_overlay *ovl)
 	int r;
 	int i;
 
-	if (!ovl->manager)
+	if (!ovl->manager || !ovl->manager->device)
 		return 0;
 
 	dssdev = ovl->manager->device;
-
-	if (!dssdev || dssdev->state != OMAP_DSS_DISPLAY_ACTIVE)
-		return 0;
 
 	if (dssdev->type == OMAP_DISPLAY_TYPE_VENC) {
 		irq = DISPC_IRQ_EVSYNC_ODD | DISPC_IRQ_EVSYNC_EVEN;
@@ -725,7 +718,6 @@ static int configure_overlay(enum omap_plane plane)
 	u16 x, y, w, h;
 	u32 paddr;
 	int r;
-	u16 orig_w, orig_h, orig_outw, orig_outh;
 
 	DSSDBGF("%d", plane);
 
@@ -746,16 +738,8 @@ static int configure_overlay(enum omap_plane plane)
 	outh = c->out_height == 0 ? c->height : c->out_height;
 	paddr = c->paddr;
 
-	orig_w = w;
-	orig_h = h;
-	orig_outw = outw;
-	orig_outh = outh;
-
 	if (c->manual_update && mc->do_manual_update) {
 		unsigned bpp;
-		unsigned scale_x_m = w, scale_x_d = outw;
-		unsigned scale_y_m = h, scale_y_d = outh;
-
 		/* If the overlay is outside the update region, disable it */
 		if (!rectangle_intersects(mc->x, mc->y, mc->w, mc->h,
 					x, y, outw, outh)) {
@@ -786,47 +770,38 @@ static int configure_overlay(enum omap_plane plane)
 			BUG();
 		}
 
-		if (mc->x > c->pos_x) {
-			x = 0;
-			outw -= (mc->x - c->pos_x);
-			paddr += (mc->x - c->pos_x) *
-				scale_x_m / scale_x_d * bpp / 8;
-		} else {
+		if (dispc_is_overlay_scaled(c)) {
+			/* If the overlay is scaled, the update area has
+			 * already been enlarged to cover the whole overlay. We
+			 * only need to adjust x/y here */
 			x = c->pos_x - mc->x;
-		}
-
-		if (mc->y > c->pos_y) {
-			y = 0;
-			outh -= (mc->y - c->pos_y);
-			paddr += (mc->y - c->pos_y) *
-				scale_y_m / scale_y_d *
-				c->screen_width * bpp / 8;
-		} else {
 			y = c->pos_y - mc->y;
-		}
+		} else {
+			if (mc->x > c->pos_x) {
+				x = 0;
+				w -= (mc->x - c->pos_x);
+				paddr += (mc->x - c->pos_x) * bpp / 8;
+			} else {
+				x = c->pos_x - mc->x;
+			}
 
-		if (mc->w < (x + outw))
-			outw -= (x + outw) - (mc->w);
+			if (mc->y > c->pos_y) {
+				y = 0;
+				h -= (mc->y - c->pos_y);
+				paddr += (mc->y - c->pos_y) * c->screen_width *
+					bpp / 8;
+			} else {
+				y = c->pos_y - mc->y;
+			}
 
-		if (mc->h < (y + outh))
-			outh -= (y + outh) - (mc->h);
+			if (mc->w < (x+w))
+				w -= (x+w) - (mc->w);
 
-		w = w * outw / orig_outw;
-		h = h * outh / orig_outh;
+			if (mc->h < (y+h))
+				h -= (y+h) - (mc->h);
 
-		/* YUV mode overlay's input width has to be even and the
-		 * algorithm above may adjust the width to be odd.
-		 *
-		 * Here we adjust the width if needed, preferring to increase
-		 * the width if the original width was bigger.
-		 */
-		if ((w & 1) &&
-				(c->color_mode == OMAP_DSS_COLOR_YUV2 ||
-				 c->color_mode == OMAP_DSS_COLOR_UYVY)) {
-			if (orig_w > w)
-				w += 1;
-			else
-				w -= 1;
+			outw = w;
+			outh = h;
 		}
 	}
 
@@ -985,7 +960,7 @@ static void make_even(u16 *x, u16 *w)
 /* Configure dispc for partial update. Return possibly modified update
  * area */
 void dss_setup_partial_planes(struct omap_dss_device *dssdev,
-		u16 *xi, u16 *yi, u16 *wi, u16 *hi, bool enlarge_update_area)
+		u16 *xi, u16 *yi, u16 *wi, u16 *hi)
 {
 	struct overlay_cache_data *oc;
 	struct manager_cache_data *mc;
@@ -994,7 +969,6 @@ void dss_setup_partial_planes(struct omap_dss_device *dssdev,
 	int i;
 	u16 x, y, w, h;
 	unsigned long flags;
-	bool area_changed;
 
 	x = *xi;
 	y = *yi;
@@ -1015,91 +989,73 @@ void dss_setup_partial_planes(struct omap_dss_device *dssdev,
 
 	spin_lock_irqsave(&dss_cache.lock, flags);
 
-	/*
-	 * Execute the outer loop until the inner loop has completed
-	 * once without increasing the update area. This will ensure that
-	 * all scaled overlays end up completely within the update area.
-	 */
-	do {
-		area_changed = false;
+	/* We need to show the whole overlay if it is scaled. So look for
+	 * those, and make the update area larger if found.
+	 * Also mark the overlay cache dirty */
+	for (i = 0; i < num_ovls; ++i) {
+		unsigned x1, y1, x2, y2;
+		unsigned outw, outh;
 
-		/* We need to show the whole overlay if it is scaled. So look
-		 * for those, and make the update area larger if found.
-		 * Also mark the overlay cache dirty */
-		for (i = 0; i < num_ovls; ++i) {
-			unsigned x1, y1, x2, y2;
-			unsigned outw, outh;
+		oc = &dss_cache.overlay_cache[i];
 
-			oc = &dss_cache.overlay_cache[i];
+		if (oc->channel != mgr->id)
+			continue;
 
-			if (oc->channel != mgr->id)
-				continue;
+		oc->dirty = true;
 
-			oc->dirty = true;
+		if (!oc->enabled)
+			continue;
 
-			if (!enlarge_update_area)
-				continue;
+		if (!dispc_is_overlay_scaled(oc))
+			continue;
 
-			if (!oc->enabled)
-				continue;
+		outw = oc->out_width == 0 ? oc->width : oc->out_width;
+		outh = oc->out_height == 0 ? oc->height : oc->out_height;
 
-			if (!dispc_is_overlay_scaled(oc))
-				continue;
+		/* is the overlay outside the update region? */
+		if (!rectangle_intersects(x, y, w, h,
+					oc->pos_x, oc->pos_y,
+					outw, outh))
+			continue;
 
-			outw = oc->out_width == 0 ?
-				oc->width : oc->out_width;
-			outh = oc->out_height == 0 ?
-				oc->height : oc->out_height;
+		/* if the overlay totally inside the update region? */
+		if (rectangle_subset(oc->pos_x, oc->pos_y, outw, outh,
+					x, y, w, h))
+			continue;
 
-			/* is the overlay outside the update region? */
-			if (!rectangle_intersects(x, y, w, h,
-						oc->pos_x, oc->pos_y,
-						outw, outh))
-				continue;
+		if (x > oc->pos_x)
+			x1 = oc->pos_x;
+		else
+			x1 = x;
 
-			/* if the overlay totally inside the update region? */
-			if (rectangle_subset(oc->pos_x, oc->pos_y, outw, outh,
-						x, y, w, h))
-				continue;
+		if (y > oc->pos_y)
+			y1 = oc->pos_y;
+		else
+			y1 = y;
 
-			if (x > oc->pos_x)
-				x1 = oc->pos_x;
-			else
-				x1 = x;
+		if ((x + w) < (oc->pos_x + outw))
+			x2 = oc->pos_x + outw;
+		else
+			x2 = x + w;
 
-			if (y > oc->pos_y)
-				y1 = oc->pos_y;
-			else
-				y1 = y;
+		if ((y + h) < (oc->pos_y + outh))
+			y2 = oc->pos_y + outh;
+		else
+			y2 = y + h;
 
-			if ((x + w) < (oc->pos_x + outw))
-				x2 = oc->pos_x + outw;
-			else
-				x2 = x + w;
+		x = x1;
+		y = y1;
+		w = x2 - x1;
+		h = y2 - y1;
 
-			if ((y + h) < (oc->pos_y + outh))
-				y2 = oc->pos_y + outh;
-			else
-				y2 = y + h;
+		make_even(&x, &w);
 
-			x = x1;
-			y = y1;
-			w = x2 - x1;
-			h = y2 - y1;
-
-			make_even(&x, &w);
-
-			DSSDBG("changing upd area due to ovl(%d) "
-			       "scaling %d,%d %dx%d\n",
+		DSSDBG("changing upd area due to ovl(%d) scaling %d,%d %dx%d\n",
 				i, x, y, w, h);
-
-			area_changed = true;
-		}
-	} while (area_changed);
+	}
 
 	mc = &dss_cache.manager_cache[mgr->id];
 	mc->do_manual_update = true;
-	mc->enlarge_update_area = enlarge_update_area;
 	mc->x = x;
 	mc->y = y;
 	mc->w = w;

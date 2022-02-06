@@ -19,6 +19,7 @@
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cisreg.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ss.h>

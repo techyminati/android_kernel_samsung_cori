@@ -90,16 +90,23 @@
 static struct pcf50633 *gta02_pcf;
 
 /*
- * This gets called frequently when we paniced.
+ * This gets called every 1ms when we paniced.
  */
 
-static long gta02_panic_blink(int state)
+static long gta02_panic_blink(long count)
 {
 	long delay = 0;
-	char led;
+	static long last_blink;
+	static char led;
 
-	led = (state) ? 1 : 0;
+	/* Fast blink: 200ms period. */
+	if (count - last_blink < 100)
+		return 0;
+
+	led ^= 1;
 	gpio_direction_output(GTA02_GPIO_AUX_LED, led);
+
+	last_blink = count;
 
 	return delay;
 }
@@ -549,7 +556,7 @@ static void gta02_poweroff(void)
 
 static void __init gta02_machine_init(void)
 {
-	/* Set the panic callback to turn AUX LED on or off. */
+	/* Set the panic callback to make AUX LED blink at ~5Hz. */
 	panic_blink = gta02_panic_blink;
 
 	s3c_pm_init();

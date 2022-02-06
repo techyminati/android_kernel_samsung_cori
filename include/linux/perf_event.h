@@ -214,9 +214,8 @@ struct perf_event_attr {
 				 *  See also PERF_RECORD_MISC_EXACT_IP
 				 */
 				precise_ip     :  2, /* skid constraint       */
-				mmap_data      :  1, /* non-exec mmap data    */
 
-				__reserved_1   : 46;
+				__reserved_1   : 47;
 
 	union {
 		__u32		wakeup_events;	  /* wakeup every n events */
@@ -462,7 +461,6 @@ enum perf_callchain_context {
 
 #ifdef CONFIG_PERF_EVENTS
 # include <asm/perf_event.h>
-# include <asm/local64.h>
 #endif
 
 struct perf_guest_info_callbacks {
@@ -533,16 +531,14 @@ struct hw_perf_event {
 			struct hrtimer	hrtimer;
 		};
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
-		struct { /* breakpoint */
-			struct arch_hw_breakpoint	info;
-			struct list_head		bp_list;
-		};
+		/* breakpoint */
+		struct arch_hw_breakpoint	info;
 #endif
 	};
-	local64_t			prev_count;
+	atomic64_t			prev_count;
 	u64				sample_period;
 	u64				last_period;
-	local64_t			period_left;
+	atomic64_t			period_left;
 	u64				interrupts;
 
 	u64				freq_time_stamp;
@@ -552,10 +548,7 @@ struct hw_perf_event {
 
 struct perf_event;
 
-/*
- * Common implementation detail of pmu::{start,commit,cancel}_txn
- */
-#define PERF_EVENT_TXN 0x1
+#define PERF_EVENT_TXN_STARTED 1
 
 /**
  * struct pmu - generic performance monitoring unit
@@ -569,28 +562,14 @@ struct pmu {
 	void (*unthrottle)		(struct perf_event *event);
 
 	/*
-	 * Group events scheduling is treated as a transaction, add group
-	 * events as a whole and perform one schedulability test. If the test
-	 * fails, roll back the whole group
+	 * group events scheduling is treated as a transaction,
+	 * add group events as a whole and perform one schedulability test.
+	 * If test fails, roll back the whole group
 	 */
 
-	/*
-	 * Start the transaction, after this ->enable() doesn't need
-	 * to do schedulability tests.
-	 */
 	void (*start_txn)	(const struct pmu *pmu);
-	/*
-	 * If ->start_txn() disabled the ->enable() schedulability test
-	 * then ->commit_txn() is required to perform one. On success
-	 * the transaction is closed. On error the transaction is kept
-	 * open until ->cancel_txn() is called.
-	 */
-	int  (*commit_txn)	(const struct pmu *pmu);
-	/*
-	 * Will cancel the transaction, assumes ->disable() is called for
-	 * each successfull ->enable() during the transaction.
-	 */
 	void (*cancel_txn)	(const struct pmu *pmu);
+	int  (*commit_txn)	(const struct pmu *pmu);
 };
 
 /**
@@ -605,9 +584,7 @@ enum perf_event_active_state {
 
 struct file;
 
-#define PERF_BUFFER_WRITABLE		0x01
-
-struct perf_buffer {
+struct perf_mmap_data {
 	atomic_t			refcount;
 	struct rcu_head			rcu_head;
 #ifdef CONFIG_PERF_USE_VMALLOC
@@ -673,8 +650,7 @@ struct perf_event {
 
 	enum perf_event_active_state	state;
 	unsigned int			attach_state;
-	local64_t			count;
-	atomic64_t			child_count;
+	atomic64_t			count;
 
 	/*
 	 * These are the total time in nanoseconds that the event
@@ -733,7 +709,7 @@ struct perf_event {
 	atomic_t			mmap_count;
 	int				mmap_locked;
 	struct user_struct		*mmap_user;
-	struct perf_buffer		*buffer;
+	struct perf_mmap_data		*data;
 
 	/* poll related */
 	wait_queue_head_t		waitq;
@@ -831,7 +807,7 @@ struct perf_cpu_context {
 
 struct perf_output_handle {
 	struct perf_event		*event;
-	struct perf_buffer		*buffer;
+	struct perf_mmap_data		*data;
 	unsigned long			wakeup;
 	unsigned long			size;
 	void				*addr;
@@ -934,10 +910,8 @@ extern atomic_t perf_swevent_enabled[PERF_COUNT_SW_MAX];
 
 extern void __perf_sw_event(u32, u64, int, struct pt_regs *, u64);
 
-#ifndef perf_arch_fetch_caller_regs
-static inline void
-perf_arch_fetch_caller_regs(struct pt_regs *regs, unsigned long ip) { }
-#endif
+extern void
+perf_arch_fetch_caller_regs(struct pt_regs *regs, unsigned long ip, int skip);
 
 /*
  * Take a snapshot of the regs. Skip ip and frame pointer to
@@ -947,11 +921,31 @@ perf_arch_fetch_caller_regs(struct pt_regs *regs, unsigned long ip) { }
  * - bp for callchains
  * - eflags, for future purposes, just in case
  */
-static inline void perf_fetch_caller_regs(struct pt_regs *regs)
+static inline void perf_fetch_caller_regs(struct pt_regs *regs, int skip)
 {
+	unsigned long ip;
+
 	memset(regs, 0, sizeof(*regs));
 
-	perf_arch_fetch_caller_regs(regs, CALLER_ADDR0);
+	switch (skip) {
+	case 1 :
+		ip = CALLER_ADDR0;
+		break;
+	case 2 :
+		ip = CALLER_ADDR1;
+		break;
+	case 3 :
+		ip = CALLER_ADDR2;
+		break;
+	case 4:
+		ip = CALLER_ADDR3;
+		break;
+	/* No need to support further for now */
+	default:
+		ip = 0;
+	}
+
+	return perf_arch_fetch_caller_regs(regs, ip, skip);
 }
 
 static inline void
@@ -961,14 +955,21 @@ perf_sw_event(u32 event_id, u64 nr, int nmi, struct pt_regs *regs, u64 addr)
 		struct pt_regs hot_regs;
 
 		if (!regs) {
-			perf_fetch_caller_regs(&hot_regs);
+			perf_fetch_caller_regs(&hot_regs, 1);
 			regs = &hot_regs;
 		}
 		__perf_sw_event(event_id, nr, nmi, regs, addr);
 	}
 }
 
-extern void perf_event_mmap(struct vm_area_struct *vma);
+extern void __perf_event_mmap(struct vm_area_struct *vma);
+
+static inline void perf_event_mmap(struct vm_area_struct *vma)
+{
+	if (vma->vm_flags & VM_EXEC)
+		__perf_event_mmap(vma);
+}
+
 extern struct perf_guest_info_callbacks *perf_guest_cbs;
 extern int perf_register_guest_info_callbacks(struct perf_guest_info_callbacks *callbacks);
 extern int perf_unregister_guest_info_callbacks(struct perf_guest_info_callbacks *callbacks);
@@ -1000,7 +1001,7 @@ static inline bool perf_paranoid_kernel(void)
 extern void perf_event_init(void);
 extern void perf_tp_event(u64 addr, u64 count, void *record,
 			  int entry_size, struct pt_regs *regs,
-			  struct hlist_head *head, int rctx);
+			  struct hlist_head *head);
 extern void perf_bp_event(struct perf_event *event, void *data);
 
 #ifndef perf_misc_flags
@@ -1067,7 +1068,7 @@ static inline void perf_event_disable(struct perf_event *event)		{ }
 #define perf_cpu_notifier(fn)					\
 do {								\
 	static struct notifier_block fn##_nb __cpuinitdata =	\
-		{ .notifier_call = fn, .priority = CPU_PRI_PERF }; \
+		{ .notifier_call = fn, .priority = 20 };	\
 	fn(&fn##_nb, (unsigned long)CPU_UP_PREPARE,		\
 		(void *)(unsigned long)smp_processor_id());	\
 	fn(&fn##_nb, (unsigned long)CPU_STARTING,		\

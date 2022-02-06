@@ -28,6 +28,7 @@
 #include <linux/mm.h>
 #include <linux/stat.h>
 #include <linux/fcntl.h>
+#include <linux/smp_lock.h>
 #include <linux/swap.h>
 #include <linux/string.h>
 #include <linux/init.h>
@@ -128,7 +129,7 @@ SYSCALL_DEFINE1(uselib, const char __user *, library)
 	if (file->f_path.mnt->mnt_flags & MNT_NOEXEC)
 		goto exit;
 
-	fsnotify_open(file);
+	fsnotify_open(file->f_path.dentry);
 
 	error = -ENOEXEC;
 	if(file->f_op) {
@@ -652,7 +653,6 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	else
 		stack_base = vma->vm_start - stack_expand;
 #endif
-	current->mm->start_stack = bprm->p;
 	ret = expand_stack(vma, stack_base);
 	if (ret)
 		ret = -EFAULT;
@@ -683,7 +683,7 @@ struct file *open_exec(const char *name)
 	if (file->f_path.mnt->mnt_flags & MNT_NOEXEC)
 		goto exit;
 
-	fsnotify_open(file);
+	fsnotify_open(file->f_path.dentry);
 
 	err = deny_write_access(file);
 	if (err)
@@ -1891,7 +1891,13 @@ void do_coredump(long signr, int exit_code, struct pt_regs *regs)
 	 */
 	clear_thread_flag(TIF_SIGPENDING);
 
+	/*
+	 * lock_kernel() because format_corename() is controlled by sysctl, which
+	 * uses lock_kernel()
+	 */
+ 	lock_kernel();
 	ispipe = format_corename(corename, signr);
+	unlock_kernel();
 
  	if (ispipe) {
 		int dump_count;

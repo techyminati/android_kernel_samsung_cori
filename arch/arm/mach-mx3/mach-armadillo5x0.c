@@ -48,14 +48,16 @@
 #include <asm/mach/map.h>
 
 #include <mach/common.h>
+#include <mach/imx-uart.h>
 #include <mach/iomux-mx3.h>
+#include <mach/board-armadillo5x0.h>
 #include <mach/mmc.h>
 #include <mach/ipu.h>
 #include <mach/mx3fb.h>
+#include <mach/mxc_nand.h>
 #include <mach/mxc_ehci.h>
 #include <mach/ulpi.h>
 
-#include "devices-imx31.h"
 #include "devices.h"
 #include "crm_regs.h"
 
@@ -299,8 +301,7 @@ static struct platform_device armadillo5x0_button_device = {
 /*
  * NAND Flash
  */
-static const struct mxc_nand_platform_data
-armadillo5x0_nand_board_info __initconst = {
+static struct mxc_nand_platform_data armadillo5x0_nand_flash_pdata = {
 	.width		= 1,
 	.hw_ecc		= 1,
 };
@@ -492,12 +493,13 @@ static struct platform_device armadillo5x0_smc911x_device = {
 };
 
 /* UART device data */
-static const struct imxuart_platform_data uart_pdata __initconst = {
+static struct imxuart_platform_data uart_pdata = {
 	.flags = IMXUART_HAVE_RTSCTS,
 };
 
 static struct platform_device *devices[] __initdata = {
 	&armadillo5x0_smc911x_device,
+	&mxc_i2c_device1,
 	&armadillo5x0_button_device,
 };
 
@@ -510,11 +512,10 @@ static void __init armadillo5x0_init(void)
 			ARRAY_SIZE(armadillo5x0_pins), "armadillo5x0");
 
 	platform_add_devices(devices, ARRAY_SIZE(devices));
-	imx31_add_imx_i2c1(NULL);
 
 	/* Register UART */
-	imx31_add_imx_uart0(&uart_pdata);
-	imx31_add_imx_uart1(&uart_pdata);
+	mxc_register_device(&mxc_uart_device0, &uart_pdata);
+	mxc_register_device(&mxc_uart_device1, &uart_pdata);
 
 	/* SMSC9118 IRQ pin */
 	gpio_direction_input(MX31_PIN_GPIO1_0);
@@ -531,7 +532,7 @@ static void __init armadillo5x0_init(void)
 			    &armadillo5x0_nor_flash_pdata);
 
 	/* Register NAND Flash */
-	imx31_add_mxc_nand(&armadillo5x0_nand_board_info);
+	mxc_register_device(&mxc_nand_device, &armadillo5x0_nand_flash_pdata);
 
 	/* set NAND page size to 2k if not configured via boot mode pins */
 	__raw_writel(__raw_readl(MXC_CCM_RCSR) | (1 << 30), MXC_CCM_RCSR);
@@ -551,9 +552,9 @@ static void __init armadillo5x0_init(void)
 	/* USB */
 #if defined(CONFIG_USB_ULPI)
 	usbotg_pdata.otg = otg_ulpi_create(&mxc_ulpi_access_ops,
-			ULPI_OTG_DRVVBUS | ULPI_OTG_DRVVBUS_EXT);
+			USB_OTG_DRV_VBUS | USB_OTG_DRV_VBUS_EXT);
 	usbh2_pdata.otg = otg_ulpi_create(&mxc_ulpi_access_ops,
-			ULPI_OTG_DRVVBUS | ULPI_OTG_DRVVBUS_EXT);
+			USB_OTG_DRV_VBUS | USB_OTG_DRV_VBUS_EXT);
 
 	mxc_register_device(&mxc_otg_host, &usbotg_pdata);
 	mxc_register_device(&mxc_usbh2, &usbh2_pdata);

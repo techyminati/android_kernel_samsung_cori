@@ -434,11 +434,8 @@ static int __logfs_create(struct inode *dir, struct dentry *dentry,
 	int ret;
 
 	ta = kzalloc(sizeof(*ta), GFP_KERNEL);
-	if (!ta) {
-		inode->i_nlink--;
-		iput(inode);
+	if (!ta)
 		return -ENOMEM;
-	}
 
 	ta->state = CREATE_1;
 	ta->ino = inode->i_ino;
@@ -824,7 +821,7 @@ const struct inode_operations logfs_dir_iops = {
 };
 const struct file_operations logfs_dir_fops = {
 	.fsync		= logfs_fsync,
-	.unlocked_ioctl	= logfs_ioctl,
+	.ioctl		= logfs_ioctl,
 	.readdir	= logfs_readdir,
 	.read		= generic_read_dir,
 };

@@ -1018,7 +1018,7 @@ static irqreturn_t nv_adma_interrupt(int irq, void *dev_instance)
 			      NV_ADMA_STAT_CPBERR |
 			      NV_ADMA_STAT_CMD_COMPLETE)) {
 			u32 check_commands = notifier_clears[i];
-			int pos, rc;
+			int pos, error = 0;
 
 			if (status & NV_ADMA_STAT_CPBERR) {
 				/* check all active commands */
@@ -1030,12 +1030,10 @@ static irqreturn_t nv_adma_interrupt(int irq, void *dev_instance)
 			}
 
 			/* check CPBs for completed commands */
-			while ((pos = ffs(check_commands))) {
+			while ((pos = ffs(check_commands)) && !error) {
 				pos--;
-				rc = nv_adma_check_cpb(ap, pos,
+				error = nv_adma_check_cpb(ap, pos,
 						notifier_error & (1 << pos));
-				if (unlikely(rc))
-					check_commands = 0;
 				check_commands &= ~(1 << pos);
 			}
 		}
@@ -2131,6 +2129,7 @@ static int nv_swncq_sdbfis(struct ata_port *ap)
 	struct nv_swncq_port_priv *pp = ap->private_data;
 	struct ata_eh_info *ehi = &ap->link.eh_info;
 	u32 sactive;
+	int nr_done = 0;
 	u32 done_mask;
 	int i;
 	u8 host_stat;
@@ -2171,21 +2170,22 @@ static int nv_swncq_sdbfis(struct ata_port *ap)
 			pp->dhfis_bits &= ~(1 << i);
 			pp->dmafis_bits &= ~(1 << i);
 			pp->sdbfis_bits |= (1 << i);
+			nr_done++;
 		}
 	}
 
 	if (!ap->qc_active) {
 		DPRINTK("over\n");
 		nv_swncq_pp_reinit(ap);
-		return 0;
+		return nr_done;
 	}
 
 	if (pp->qc_active & pp->dhfis_bits)
-		return 0;
+		return nr_done;
 
 	if ((pp->ncq_flags & ncq_saw_backout) ||
 	    (pp->qc_active ^ pp->dhfis_bits))
-		/* if the controller can't get a device to host register FIS,
+		/* if the controller cann't get a device to host register FIS,
 		 * The driver needs to reissue the new command.
 		 */
 		lack_dhfis = 1;
@@ -2202,7 +2202,7 @@ static int nv_swncq_sdbfis(struct ata_port *ap)
 	if (lack_dhfis) {
 		qc = ata_qc_from_tag(ap, pp->last_issue_tag);
 		nv_swncq_issue_atacmd(ap, qc);
-		return 0;
+		return nr_done;
 	}
 
 	if (pp->defer_queue.defer_bits) {
@@ -2212,7 +2212,7 @@ static int nv_swncq_sdbfis(struct ata_port *ap)
 		nv_swncq_issue_atacmd(ap, qc);
 	}
 
-	return 0;
+	return nr_done;
 }
 
 static inline u32 nv_swncq_tag(struct ata_port *ap)
@@ -2224,7 +2224,7 @@ static inline u32 nv_swncq_tag(struct ata_port *ap)
 	return (tag & 0x1f);
 }
 
-static void nv_swncq_dmafis(struct ata_port *ap)
+static int nv_swncq_dmafis(struct ata_port *ap)
 {
 	struct ata_queued_cmd *qc;
 	unsigned int rw;
@@ -2239,7 +2239,7 @@ static void nv_swncq_dmafis(struct ata_port *ap)
 	qc = ata_qc_from_tag(ap, tag);
 
 	if (unlikely(!qc))
-		return;
+		return 0;
 
 	rw = qc->tf.flags & ATA_TFLAG_WRITE;
 
@@ -2254,6 +2254,8 @@ static void nv_swncq_dmafis(struct ata_port *ap)
 		dmactl |= ATA_DMA_WR;
 
 	iowrite8(dmactl | ATA_DMA_START, ap->ioaddr.bmdma_addr + ATA_DMA_CMD);
+
+	return 1;
 }
 
 static void nv_swncq_host_interrupt(struct ata_port *ap, u16 fis)
@@ -2263,6 +2265,7 @@ static void nv_swncq_host_interrupt(struct ata_port *ap, u16 fis)
 	struct ata_eh_info *ehi = &ap->link.eh_info;
 	u32 serror;
 	u8 ata_stat;
+	int rc = 0;
 
 	ata_stat = ap->ops->sff_check_status(ap);
 	nv_swncq_irq_clear(ap, fis);
@@ -2307,7 +2310,8 @@ static void nv_swncq_host_interrupt(struct ata_port *ap, u16 fis)
 			"dhfis 0x%X dmafis 0x%X sactive 0x%X\n",
 			ap->print_id, pp->qc_active, pp->dhfis_bits,
 			pp->dmafis_bits, readl(pp->sactive_block));
-		if (nv_swncq_sdbfis(ap) < 0)
+		rc = nv_swncq_sdbfis(ap);
+		if (rc < 0)
 			goto irq_error;
 	}
 
@@ -2344,7 +2348,7 @@ static void nv_swncq_host_interrupt(struct ata_port *ap, u16 fis)
 		 */
 		pp->dmafis_bits |= (0x1 << nv_swncq_tag(ap));
 		pp->ncq_flags |= ncq_saw_dmas;
-		nv_swncq_dmafis(ap);
+		rc = nv_swncq_dmafis(ap);
 	}
 
 irq_exit:

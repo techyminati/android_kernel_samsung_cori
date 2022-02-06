@@ -11,6 +11,8 @@ struct trace_array;
 struct tracer;
 struct dentry;
 
+DECLARE_PER_CPU(struct trace_seq, ftrace_event_seq);
+
 struct trace_print_flags {
 	unsigned long		mask;
 	const char		*name;
@@ -55,9 +57,6 @@ struct trace_iterator {
 	struct mutex		mutex;
 	struct ring_buffer_iter	*buffer_iter[NR_CPUS];
 	unsigned long		iter_flags;
-
-	/* trace_seq for __print_flags() and __print_symbolic() etc. */
-	struct trace_seq	tmp_seq;
 
 	/* The below is zeroed out in pipe_read */
 	struct trace_seq	seq;
@@ -147,19 +146,14 @@ struct ftrace_event_class {
 	int			(*raw_init)(struct ftrace_event_call *);
 };
 
-extern int ftrace_event_reg(struct ftrace_event_call *event,
-			    enum trace_reg type);
-
 enum {
 	TRACE_EVENT_FL_ENABLED_BIT,
 	TRACE_EVENT_FL_FILTERED_BIT,
-	TRACE_EVENT_FL_RECORDED_CMD_BIT,
 };
 
 enum {
-	TRACE_EVENT_FL_ENABLED		= (1 << TRACE_EVENT_FL_ENABLED_BIT),
-	TRACE_EVENT_FL_FILTERED		= (1 << TRACE_EVENT_FL_FILTERED_BIT),
-	TRACE_EVENT_FL_RECORDED_CMD	= (1 << TRACE_EVENT_FL_RECORDED_CMD_BIT),
+	TRACE_EVENT_FL_ENABLED	= (1 << TRACE_EVENT_FL_ENABLED_BIT),
+	TRACE_EVENT_FL_FILTERED	= (1 << TRACE_EVENT_FL_FILTERED_BIT),
 };
 
 struct ftrace_event_call {
@@ -177,7 +171,6 @@ struct ftrace_event_call {
 	 * 32 bit flags:
 	 *   bit 1:		enabled
 	 *   bit 2:		filter_active
-	 *   bit 3:		enabled cmd record
 	 *
 	 * Changes to flags must hold the event_mutex.
 	 *
@@ -264,7 +257,8 @@ static inline void
 perf_trace_buf_submit(void *raw_data, int size, int rctx, u64 addr,
 		       u64 count, struct pt_regs *regs, void *head)
 {
-	perf_tp_event(addr, count, raw_data, size, regs, head, rctx);
+	perf_tp_event(addr, count, raw_data, size, regs, head);
+	perf_swevent_put_recursion_context(rctx);
 }
 #endif
 

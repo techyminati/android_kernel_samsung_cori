@@ -201,7 +201,8 @@ static struct tagtable __tagtable_##fn __tag = { tag, fn }
 struct membank {
 	unsigned long start;
 	unsigned long size;
-	unsigned int highmem;
+	unsigned short node;
+	unsigned short highmem;
 };
 
 struct meminfo {
@@ -211,8 +212,9 @@ struct meminfo {
 
 extern struct meminfo meminfo;
 
-#define for_each_bank(iter,mi)				\
-	for (iter = 0; iter < (mi)->nr_banks; iter++)
+#define for_each_nodebank(iter,mi,no)			\
+	for (iter = 0; iter < (mi)->nr_banks; iter++)	\
+		if ((mi)->bank[iter].node == no)
 
 #define bank_pfn_start(bank)	__phys_to_pfn((bank)->start)
 #define bank_pfn_end(bank)	__phys_to_pfn((bank)->start + (bank)->size)

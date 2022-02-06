@@ -286,8 +286,6 @@ static int hdpvr_probe(struct usb_interface *interface,
 		goto error;
 	}
 
-	dev->workqueue = 0;
-
 	/* register v4l2_device early so it can be used for printks */
 	if (v4l2_device_register(&interface->dev, &dev->v4l2_dev)) {
 		err("v4l2_device_register failed");
@@ -382,9 +380,6 @@ static int hdpvr_probe(struct usb_interface *interface,
 
 error:
 	if (dev) {
-		/* Destroy single thread */
-		if (dev->workqueue)
-			destroy_workqueue(dev->workqueue);
 		/* this frees allocated memory */
 		hdpvr_delete(dev);
 	}

@@ -33,7 +33,6 @@
 #include "linux/mm.h"
 #include "linux/slab.h"
 #include "linux/vmalloc.h"
-#include "linux/smp_lock.h"
 #include "linux/blkpg.h"
 #include "linux/genhd.h"
 #include "linux/spinlock.h"
@@ -1099,7 +1098,6 @@ static int ubd_open(struct block_device *bdev, fmode_t mode)
 	struct ubd *ubd_dev = disk->private_data;
 	int err = 0;
 
-	lock_kernel();
 	if(ubd_dev->count == 0){
 		err = ubd_open_dev(ubd_dev);
 		if(err){
@@ -1117,8 +1115,7 @@ static int ubd_open(struct block_device *bdev, fmode_t mode)
 	        if(--ubd_dev->count == 0) ubd_close_dev(ubd_dev);
 	        err = -EROFS;
 	}*/
-out:
-	unlock_kernel();
+ out:
 	return err;
 }
 
@@ -1126,10 +1123,8 @@ static int ubd_release(struct gendisk *disk, fmode_t mode)
 {
 	struct ubd *ubd_dev = disk->private_data;
 
-	lock_kernel();
 	if(--ubd_dev->count == 0)
 		ubd_close_dev(ubd_dev);
-	unlock_kernel();
 	return 0;
 }
 

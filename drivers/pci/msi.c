@@ -460,7 +460,7 @@ static int msi_capability_init(struct pci_dev *dev, int nvec)
 static void __iomem *msix_map_region(struct pci_dev *dev, unsigned pos,
 							unsigned nr_entries)
 {
-	resource_size_t phys_addr;
+	unsigned long phys_addr;
 	u32 table_offset;
 	u8 bir;
 

@@ -10,6 +10,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/types.h>
@@ -30,9 +34,9 @@
 #include <mach/common.h>
 #include <asm/page.h>
 #include <asm/setup.h>
+#include <mach/board-qong.h>
+#include <mach/imx-uart.h>
 #include <mach/iomux-mx3.h>
-
-#include "devices-imx31.h"
 #include "devices.h"
 
 /* FPGA defines */
@@ -58,7 +62,7 @@
  * This file contains the board-specific initialization routines.
  */
 
-static const struct imxuart_platform_data uart_pdata __initconst = {
+static struct imxuart_platform_data uart_pdata = {
 	.flags = IMXUART_HAVE_RTSCTS,
 };
 
@@ -69,11 +73,11 @@ static int uart_pins[] = {
 	MX31_PIN_RXD1__RXD1
 };
 
-static inline void __init mxc_init_imx_uart(void)
+static inline void mxc_init_imx_uart(void)
 {
 	mxc_iomux_setup_multiple_pins(uart_pins, ARRAY_SIZE(uart_pins),
 			"uart-0");
-	imx31_add_imx_uart0(&uart_pdata);
+	mxc_register_device(&mxc_uart_device0, &uart_pdata);
 }
 
 static struct resource dnet_resources[] = {
@@ -112,7 +116,7 @@ static struct physmap_flash_data qong_flash_data = {
 
 static struct resource qong_flash_resource = {
 	.start = MX31_CS0_BASE_ADDR,
-	.end = MX31_CS0_BASE_ADDR + SZ_128M - 1,
+	.end = MX31_CS0_BASE_ADDR + QONG_NOR_SIZE - 1,
 	.flags = IORESOURCE_MEM,
 };
 
@@ -165,6 +169,7 @@ static void qong_nand_select_chip(struct mtd_info *mtd, int chip)
 
 static struct platform_nand_data qong_nand_data = {
 	.chip = {
+		.nr_chips		= 1,
 		.chip_delay		= 20,
 		.options		= 0,
 	},

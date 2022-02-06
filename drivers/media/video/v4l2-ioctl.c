@@ -26,7 +26,6 @@
 #endif
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
-#include <media/v4l2-ctrls.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-chip-ident.h>
@@ -1260,12 +1259,9 @@ static long __video_do_ioctl(struct file *file,
 	{
 		struct v4l2_queryctrl *p = arg;
 
-		if (vfd->ctrl_handler)
-			ret = v4l2_queryctrl(vfd->ctrl_handler, p);
-		else if (ops->vidioc_queryctrl)
-			ret = ops->vidioc_queryctrl(file, fh, p);
-		else
+		if (!ops->vidioc_queryctrl)
 			break;
+		ret = ops->vidioc_queryctrl(file, fh, p);
 		if (!ret)
 			dbgarg(cmd, "id=0x%x, type=%d, name=%s, min/max=%d/%d, "
 					"step=%d, default=%d, flags=0x%08x\n",
@@ -1280,9 +1276,7 @@ static long __video_do_ioctl(struct file *file,
 	{
 		struct v4l2_control *p = arg;
 
-		if (vfd->ctrl_handler)
-			ret = v4l2_g_ctrl(vfd->ctrl_handler, p);
-		else if (ops->vidioc_g_ctrl)
+		if (ops->vidioc_g_ctrl)
 			ret = ops->vidioc_g_ctrl(file, fh, p);
 		else if (ops->vidioc_g_ext_ctrls) {
 			struct v4l2_ext_controls ctrls;
@@ -1312,16 +1306,11 @@ static long __video_do_ioctl(struct file *file,
 		struct v4l2_ext_controls ctrls;
 		struct v4l2_ext_control ctrl;
 
-		if (!vfd->ctrl_handler &&
-			!ops->vidioc_s_ctrl && !ops->vidioc_s_ext_ctrls)
+		if (!ops->vidioc_s_ctrl && !ops->vidioc_s_ext_ctrls)
 			break;
 
 		dbgarg(cmd, "id=0x%x, value=%d\n", p->id, p->value);
 
-		if (vfd->ctrl_handler) {
-			ret = v4l2_s_ctrl(vfd->ctrl_handler, p);
-			break;
-		}
 		if (ops->vidioc_s_ctrl) {
 			ret = ops->vidioc_s_ctrl(file, fh, p);
 			break;
@@ -1343,12 +1332,10 @@ static long __video_do_ioctl(struct file *file,
 		struct v4l2_ext_controls *p = arg;
 
 		p->error_idx = p->count;
-		if (vfd->ctrl_handler)
-			ret = v4l2_g_ext_ctrls(vfd->ctrl_handler, p);
-		else if (ops->vidioc_g_ext_ctrls && check_ext_ctrls(p, 0))
-			ret = ops->vidioc_g_ext_ctrls(file, fh, p);
-		else
+		if (!ops->vidioc_g_ext_ctrls)
 			break;
+		if (check_ext_ctrls(p, 0))
+			ret = ops->vidioc_g_ext_ctrls(file, fh, p);
 		v4l_print_ext_ctrls(cmd, vfd, p, !ret);
 		break;
 	}
@@ -1357,12 +1344,10 @@ static long __video_do_ioctl(struct file *file,
 		struct v4l2_ext_controls *p = arg;
 
 		p->error_idx = p->count;
-		if (!vfd->ctrl_handler && !ops->vidioc_s_ext_ctrls)
+		if (!ops->vidioc_s_ext_ctrls)
 			break;
 		v4l_print_ext_ctrls(cmd, vfd, p, 1);
-		if (vfd->ctrl_handler)
-			ret = v4l2_s_ext_ctrls(vfd->ctrl_handler, p);
-		else if (check_ext_ctrls(p, 0))
+		if (check_ext_ctrls(p, 0))
 			ret = ops->vidioc_s_ext_ctrls(file, fh, p);
 		break;
 	}
@@ -1371,12 +1356,10 @@ static long __video_do_ioctl(struct file *file,
 		struct v4l2_ext_controls *p = arg;
 
 		p->error_idx = p->count;
-		if (!vfd->ctrl_handler && !ops->vidioc_try_ext_ctrls)
+		if (!ops->vidioc_try_ext_ctrls)
 			break;
 		v4l_print_ext_ctrls(cmd, vfd, p, 1);
-		if (vfd->ctrl_handler)
-			ret = v4l2_try_ext_ctrls(vfd->ctrl_handler, p);
-		else if (check_ext_ctrls(p, 0))
+		if (check_ext_ctrls(p, 0))
 			ret = ops->vidioc_try_ext_ctrls(file, fh, p);
 		break;
 	}
@@ -1384,12 +1367,9 @@ static long __video_do_ioctl(struct file *file,
 	{
 		struct v4l2_querymenu *p = arg;
 
-		if (vfd->ctrl_handler)
-			ret = v4l2_querymenu(vfd->ctrl_handler, p);
-		else if (ops->vidioc_querymenu)
-			ret = ops->vidioc_querymenu(file, fh, p);
-		else
+		if (!ops->vidioc_querymenu)
 			break;
+		ret = ops->vidioc_querymenu(file, fh, p);
 		if (!ret)
 			dbgarg(cmd, "id=0x%x, index=%d, name=%s\n",
 				p->id, p->index, p->name);

@@ -32,7 +32,6 @@
 #include "helper.h"
 #include "endpoint.h"
 #include "pcm.h"
-#include "clock.h"
 
 /*
  * handle the quirks for the contained interfaces

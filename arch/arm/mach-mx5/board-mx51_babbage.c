@@ -12,7 +12,6 @@
 
 #include <linux/init.h>
 #include <linux/platform_device.h>
-#include <linux/i2c.h>
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/io.h>
@@ -22,7 +21,6 @@
 #include <mach/hardware.h>
 #include <mach/imx-uart.h>
 #include <mach/iomux-mx51.h>
-#include <mach/i2c.h>
 #include <mach/mxc_ehci.h>
 
 #include <asm/irq.h>
@@ -66,18 +64,6 @@ static struct pad_desc mx51babbage_pads[] = {
 	MX51_PAD_EIM_D27__UART3_RTS,
 	MX51_PAD_EIM_D24__UART3_CTS,
 
-	/* I2C1 */
-	MX51_PAD_EIM_D16__I2C1_SDA,
-	MX51_PAD_EIM_D19__I2C1_SCL,
-
-	/* I2C2 */
-	MX51_PAD_KEY_COL4__I2C2_SCL,
-	MX51_PAD_KEY_COL5__I2C2_SDA,
-
-	/* HSI2C */
-	MX51_PAD_I2C1_CLK__HSI2C_CLK,
-	MX51_PAD_I2C1_DAT__HSI2C_DAT,
-
 	/* USB HOST1 */
 	MX51_PAD_USBH1_CLK__USBH1_CLK,
 	MX51_PAD_USBH1_DIR__USBH1_DIR,
@@ -92,7 +78,7 @@ static struct pad_desc mx51babbage_pads[] = {
 	MX51_PAD_USBH1_DATA7__USBH1_DATA7,
 
 	/* USB HUB reset line*/
-	MX51_PAD_GPIO_1_7__GPIO_1_7,
+	MX51_PAD_GPIO_1_7__GPIO1_7,
 };
 
 /* Serial ports */
@@ -112,14 +98,6 @@ static inline void mxc_init_imx_uart(void)
 {
 }
 #endif /* SERIAL_IMX */
-
-static struct imxi2c_platform_data babbage_i2c_data = {
-	.bitrate = 100000,
-};
-
-static struct imxi2c_platform_data babbage_hsi2c_data = {
-	.bitrate = 400000,
-};
 
 static int gpio_usbh1_active(void)
 {
@@ -251,10 +229,6 @@ static void __init mxc_board_init(void)
 					ARRAY_SIZE(mx51babbage_pads));
 	mxc_init_imx_uart();
 	platform_add_devices(devices, ARRAY_SIZE(devices));
-
-	mxc_register_device(&mxc_i2c_device0, &babbage_i2c_data);
-	mxc_register_device(&mxc_i2c_device1, &babbage_i2c_data);
-	mxc_register_device(&mxc_hsi2c_device, &babbage_hsi2c_data);
 
 	if (otg_mode_host)
 		mxc_register_device(&mxc_usbdr_host_device, &dr_utmi_config);

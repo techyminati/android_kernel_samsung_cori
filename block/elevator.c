@@ -79,13 +79,8 @@ int elv_rq_merge_ok(struct request *rq, struct bio *bio)
 	/*
 	 * Don't merge file system requests and discard requests
 	 */
-	if ((bio->bi_rw & REQ_DISCARD) != (rq->bio->bi_rw & REQ_DISCARD))
-		return 0;
-
-	/*
-	 * Don't merge discard requests and secure discard requests
-	 */
-	if ((bio->bi_rw & REQ_SECURE) != (rq->bio->bi_rw & REQ_SECURE))
+	if (bio_rw_flagged(bio, BIO_RW_DISCARD) !=
+	    bio_rw_flagged(rq->bio, BIO_RW_DISCARD))
 		return 0;
 
 	/*
@@ -433,8 +428,7 @@ void elv_dispatch_sort(struct request_queue *q, struct request *rq)
 	list_for_each_prev(entry, &q->queue_head) {
 		struct request *pos = list_entry_rq(entry);
 
-		if ((rq->cmd_flags & REQ_DISCARD) !=
-		    (pos->cmd_flags & REQ_DISCARD))
+		if (blk_discard_rq(rq) != blk_discard_rq(pos))
 			break;
 		if (rq_data_dir(rq) != rq_data_dir(pos))
 			break;
@@ -564,7 +558,7 @@ void elv_requeue_request(struct request_queue *q, struct request *rq)
 	 */
 	if (blk_account_rq(rq)) {
 		q->in_flight[rq_is_sync(rq)]--;
-		if (rq->cmd_flags & REQ_SORTED)
+		if (blk_sorted_rq(rq))
 			elv_deactivate_rq(q, rq);
 	}
 
@@ -650,8 +644,7 @@ void elv_insert(struct request_queue *q, struct request *rq, int where)
 		break;
 
 	case ELEVATOR_INSERT_SORT:
-		BUG_ON(rq->cmd_type != REQ_TYPE_FS &&
-		       !(rq->cmd_flags & REQ_DISCARD));
+		BUG_ON(!blk_fs_request(rq) && !blk_discard_rq(rq));
 		rq->cmd_flags |= REQ_SORTED;
 		q->nr_sorted++;
 		if (rq_mergeable(rq)) {
@@ -723,7 +716,7 @@ void __elv_add_request(struct request_queue *q, struct request *rq, int where,
 		/*
 		 * toggle ordered color
 		 */
-		if (rq->cmd_flags & REQ_HARDBARRIER)
+		if (blk_barrier_rq(rq))
 			q->ordcolor ^= 1;
 
 		/*
@@ -736,8 +729,7 @@ void __elv_add_request(struct request_queue *q, struct request *rq, int where,
 		 * this request is scheduling boundary, update
 		 * end_sector
 		 */
-		if (rq->cmd_type == REQ_TYPE_FS ||
-		    (rq->cmd_flags & REQ_DISCARD)) {
+		if (blk_fs_request(rq) || blk_discard_rq(rq)) {
 			q->end_sector = rq_end_sector(rq);
 			q->boundary_rq = rq;
 		}
@@ -851,8 +843,7 @@ void elv_completed_request(struct request_queue *q, struct request *rq)
 	 */
 	if (blk_account_rq(rq)) {
 		q->in_flight[rq_is_sync(rq)]--;
-		if ((rq->cmd_flags & REQ_SORTED) &&
-		    e->ops->elevator_completed_req_fn)
+		if (blk_sorted_rq(rq) && e->ops->elevator_completed_req_fn)
 			e->ops->elevator_completed_req_fn(q, rq);
 	}
 

@@ -346,27 +346,6 @@ static int scif_rxfill(struct uart_port *port)
 		return sci_in(port, SCFDR) & SCIF2_RFDC_MASK;
 	}
 }
-#elif defined(CONFIG_ARCH_SH7372)
-static int scif_txfill(struct uart_port *port)
-{
-	if (port->type == PORT_SCIFA)
-		return sci_in(port, SCFDR) >> 8;
-	else
-		return sci_in(port, SCTFDR);
-}
-
-static int scif_txroom(struct uart_port *port)
-{
-	return port->fifosize - scif_txfill(port);
-}
-
-static int scif_rxfill(struct uart_port *port)
-{
-	if (port->type == PORT_SCIFA)
-		return sci_in(port, SCFDR) & SCIF_RFDC_MASK;
-	else
-		return sci_in(port, SCRFDR);
-}
 #else
 static int scif_txfill(struct uart_port *port)
 {
@@ -704,7 +683,7 @@ static irqreturn_t sci_rx_interrupt(int irq, void *ptr)
 		u16 ssr = sci_in(port, SCxSR);
 
 		/* Disable future Rx interrupts */
-		if (port->type == PORT_SCIFA || port->type == PORT_SCIFB) {
+		if (port->type == PORT_SCIFA) {
 			disable_irq_nosync(irq);
 			scr |= 0x4000;
 		} else {
@@ -949,7 +928,7 @@ static void sci_dma_tx_complete(void *arg)
 
 	if (!uart_circ_empty(xmit)) {
 		schedule_work(&s->work_tx);
-	} else if (port->type == PORT_SCIFA || port->type == PORT_SCIFB) {
+	} else if (port->type == PORT_SCIFA) {
 		u16 ctrl = sci_in(port, SCSCR);
 		sci_out(port, SCSCR, ctrl & ~SCI_CTRL_FLAGS_TIE);
 	}
@@ -1205,7 +1184,7 @@ static void sci_start_tx(struct uart_port *port)
 	unsigned short ctrl;
 
 #ifdef CONFIG_SERIAL_SH_SCI_DMA
-	if (port->type == PORT_SCIFA || port->type == PORT_SCIFB) {
+	if (port->type == PORT_SCIFA) {
 		u16 new, scr = sci_in(port, SCSCR);
 		if (s->chan_tx)
 			new = scr | 0x8000;
@@ -1218,7 +1197,7 @@ static void sci_start_tx(struct uart_port *port)
 	    s->cookie_tx < 0)
 		schedule_work(&s->work_tx);
 #endif
-	if (!s->chan_tx || port->type == PORT_SCIFA || port->type == PORT_SCIFB) {
+	if (!s->chan_tx || port->type == PORT_SCIFA) {
 		/* Set TIE (Transmit Interrupt Enable) bit in SCSCR */
 		ctrl = sci_in(port, SCSCR);
 		sci_out(port, SCSCR, ctrl | SCI_CTRL_FLAGS_TIE);
@@ -1231,7 +1210,7 @@ static void sci_stop_tx(struct uart_port *port)
 
 	/* Clear TIE (Transmit Interrupt Enable) bit in SCSCR */
 	ctrl = sci_in(port, SCSCR);
-	if (port->type == PORT_SCIFA || port->type == PORT_SCIFB)
+	if (port->type == PORT_SCIFA)
 		ctrl &= ~0x8000;
 	ctrl &= ~SCI_CTRL_FLAGS_TIE;
 	sci_out(port, SCSCR, ctrl);
@@ -1243,7 +1222,7 @@ static void sci_start_rx(struct uart_port *port)
 
 	/* Set RIE (Receive Interrupt Enable) bit in SCSCR */
 	ctrl |= sci_in(port, SCSCR);
-	if (port->type == PORT_SCIFA || port->type == PORT_SCIFB)
+	if (port->type == PORT_SCIFA)
 		ctrl &= ~0x4000;
 	sci_out(port, SCSCR, ctrl);
 }
@@ -1254,7 +1233,7 @@ static void sci_stop_rx(struct uart_port *port)
 
 	/* Clear RIE (Receive Interrupt Enable) bit in SCSCR */
 	ctrl = sci_in(port, SCSCR);
-	if (port->type == PORT_SCIFA || port->type == PORT_SCIFB)
+	if (port->type == PORT_SCIFA)
 		ctrl &= ~0x4000;
 	ctrl &= ~(SCI_CTRL_FLAGS_RIE | SCI_CTRL_FLAGS_REIE);
 	sci_out(port, SCSCR, ctrl);
@@ -1292,7 +1271,7 @@ static void rx_timer_fn(unsigned long arg)
 	struct uart_port *port = &s->port;
 	u16 scr = sci_in(port, SCSCR);
 
-	if (port->type == PORT_SCIFA || port->type == PORT_SCIFB) {
+	if (port->type == PORT_SCIFA) {
 		scr &= ~0x4000;
 		enable_irq(s->irqs[1]);
 	}
@@ -1545,8 +1524,6 @@ static const char *sci_type(struct uart_port *port)
 		return "scif";
 	case PORT_SCIFA:
 		return "scifa";
-	case PORT_SCIFB:
-		return "scifb";
 	}
 
 	return NULL;
@@ -1635,9 +1612,6 @@ static int __devinit sci_init_single(struct platform_device *dev,
 	port->line	= index;
 
 	switch (p->type) {
-	case PORT_SCIFB:
-		port->fifosize = 256;
-		break;
 	case PORT_SCIFA:
 		port->fifosize = 64;
 		break;

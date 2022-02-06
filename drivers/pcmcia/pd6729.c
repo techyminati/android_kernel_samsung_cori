@@ -17,6 +17,7 @@
 #include <linux/device.h>
 #include <linux/io.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/ss.h>
 #include <pcmcia/cs.h>
 

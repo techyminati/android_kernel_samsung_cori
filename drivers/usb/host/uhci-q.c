@@ -565,7 +565,7 @@ static void uhci_unlink_qh(struct uhci_hcd *uhci, struct uhci_qh *qh)
 	qh->unlink_frame = uhci->frame_number;
 
 	/* Force an interrupt so we know when the QH is fully unlinked */
-	if (list_empty(&uhci->skel_unlink_qh->node) || uhci->is_stopped)
+	if (list_empty(&uhci->skel_unlink_qh->node))
 		uhci_set_next_interrupt(uhci);
 
 	/* Move the QH from its old list to the end of the unlinking list */
@@ -1667,7 +1667,7 @@ static int uhci_advance_check(struct uhci_hcd *uhci, struct uhci_qh *qh)
 			qh->advance_jiffies = jiffies;
 			goto done;
 		}
-		ret = uhci->is_stopped;
+		ret = 0;
 	}
 
 	/* The queue hasn't advanced; check for timeout */

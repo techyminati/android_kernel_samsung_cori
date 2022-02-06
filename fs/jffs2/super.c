@@ -135,7 +135,7 @@ static const struct super_operations jffs2_super_operations =
 	.write_super =	jffs2_write_super,
 	.statfs =	jffs2_statfs,
 	.remount_fs =	jffs2_remount_fs,
-	.evict_inode =	jffs2_evict_inode,
+	.clear_inode =	jffs2_clear_inode,
 	.dirty_inode =	jffs2_dirty_inode,
 	.sync_fs =	jffs2_sync_fs,
 };

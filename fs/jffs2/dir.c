@@ -2,7 +2,6 @@
  * JFFS2 -- Journalling Flash File System, Version 2.
  *
  * Copyright © 2001-2007 Red Hat, Inc.
- * Copyright © 2004-2010 David Woodhouse <dwmw2@infradead.org>
  *
  * Created by David Woodhouse <dwmw2@infradead.org>
  *
@@ -233,7 +232,9 @@ static int jffs2_create(struct inode *dir_i, struct dentry *dentry, int mode,
 	return 0;
 
  fail:
-	iget_failed(inode);
+	make_bad_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 	jffs2_free_raw_inode(ri);
 	return ret;
 }
@@ -453,7 +454,9 @@ static int jffs2_symlink (struct inode *dir_i, struct dentry *dentry, const char
 	return 0;
 
  fail:
-	iget_failed(inode);
+	make_bad_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 	return ret;
 }
 
@@ -598,7 +601,9 @@ static int jffs2_mkdir (struct inode *dir_i, struct dentry *dentry, int mode)
 	return 0;
 
  fail:
-	iget_failed(inode);
+	make_bad_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 	return ret;
 }
 
@@ -773,7 +778,9 @@ static int jffs2_mknod (struct inode *dir_i, struct dentry *dentry, int mode, de
 	return 0;
 
  fail:
-	iget_failed(inode);
+	make_bad_inode(inode);
+	unlock_new_inode(inode);
+	iput(inode);
 	return ret;
 }
 

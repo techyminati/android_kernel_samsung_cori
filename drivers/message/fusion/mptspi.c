@@ -1551,12 +1551,9 @@ mptspi_init(void)
 	if (!mptspi_transport_template)
 		return -ENODEV;
 
-	mptspiDoneCtx = mpt_register(mptscsih_io_done, MPTSPI_DRIVER,
-	    "mptscsih_io_done");
-	mptspiTaskCtx = mpt_register(mptscsih_taskmgmt_complete, MPTSPI_DRIVER,
-	    "mptscsih_taskmgmt_complete");
-	mptspiInternalCtx = mpt_register(mptscsih_scandv_complete,
-	    MPTSPI_DRIVER, "mptscsih_scandv_complete");
+	mptspiDoneCtx = mpt_register(mptscsih_io_done, MPTSPI_DRIVER);
+	mptspiTaskCtx = mpt_register(mptscsih_taskmgmt_complete, MPTSPI_DRIVER);
+	mptspiInternalCtx = mpt_register(mptscsih_scandv_complete, MPTSPI_DRIVER);
 
 	mpt_event_register(mptspiDoneCtx, mptspi_event_process);
 	mpt_reset_register(mptspiDoneCtx, mptspi_ioc_reset);

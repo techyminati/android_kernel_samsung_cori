@@ -10,6 +10,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/device.h>
+#include <linux/fs.h>
 
 struct request;
 struct mmc_data;
@@ -92,8 +93,6 @@ struct mmc_command {
  *              actively failing requests
  */
 
-	unsigned int		erase_timeout;	/* in milliseconds */
-
 	struct mmc_data		*data;		/* data segment associated with cmd */
 	struct mmc_request	*mrq;		/* associated request */
 };
@@ -136,23 +135,6 @@ extern int mmc_wait_for_cmd(struct mmc_host *, struct mmc_command *, int);
 extern int mmc_wait_for_app_cmd(struct mmc_host *, struct mmc_card *,
 	struct mmc_command *, int);
 
-#define MMC_ERASE_ARG		0x00000000
-#define MMC_SECURE_ERASE_ARG	0x80000000
-#define MMC_TRIM_ARG		0x00000001
-#define MMC_SECURE_TRIM1_ARG	0x80000001
-#define MMC_SECURE_TRIM2_ARG	0x80008000
-
-#define MMC_SECURE_ARGS		0x80000000
-#define MMC_TRIM_ARGS		0x00008001
-
-extern int mmc_erase(struct mmc_card *card, unsigned int from, unsigned int nr,
-		     unsigned int arg);
-extern int mmc_can_erase(struct mmc_card *card);
-extern int mmc_can_trim(struct mmc_card *card);
-extern int mmc_can_secure_erase_trim(struct mmc_card *card);
-extern int mmc_erase_group_aligned(struct mmc_card *card, unsigned int from,
-				   unsigned int nr);
-
 extern void mmc_set_data_timeout(struct mmc_data *, const struct mmc_card *);
 extern unsigned int mmc_align_data_size(struct mmc_card *, unsigned int);
 
@@ -172,5 +154,39 @@ static inline void mmc_claim_host(struct mmc_host *host)
 }
 
 extern u32 mmc_vddrange_to_ocrmask(int vdd_min, int vdd_max);
+
+struct raw_hd_struct {
+	sector_t start_sect;
+	sector_t nr_sects;
+	int partno;
+	int major;
+	int first_minor;
+	/* index = first_minor >> MMC_SHIFT */
+};
+
+struct raw_mmc_panic_ops {
+	int type;	/* MMC, SD, SDIO on the fly */
+	int (*panic_probe)(struct raw_hd_struct *rhd, int type);
+	int (*panic_write)(struct raw_hd_struct *rhd, char *buf,
+			unsigned int offset, unsigned int len);
+	int (*panic_erase)(struct raw_hd_struct *rhd, unsigned int offset,
+			unsigned int len);
+};
+
+struct mmcpart_notifier {
+	void (*add)(struct raw_hd_struct *mmcpart,
+			struct raw_mmc_panic_ops *panic_ops);
+	void (*remove)(struct raw_hd_struct *mmcpart);
+	char partname[BDEVNAME_SIZE];
+	struct list_head list;
+};
+
+extern int get_mmcpart_by_name(char *part_name, char *dev_name);
+extern void get_mmcalias_by_id(char *buf, int major, int minor);
+
+extern void register_mmcpart_user(struct mmcpart_notifier *new);
+extern int unregister_mmcpart_user(struct mmcpart_notifier *old);
+extern void mmc_power_up_brcm(struct mmc_host *host);
+extern void mmc_power_off_brcm(struct mmc_host *host);
 
 #endif

@@ -140,7 +140,6 @@ struct mptsas_devinfo {
 	u64	sas_address;    /* WWN of this device,
 				   SATA is assigned by HBA,expander */
 	u32	device_info;	/* bitfield detailed info about this device */
-	u16	flags;		/* sas device pg0 flags */
 };
 
 /*

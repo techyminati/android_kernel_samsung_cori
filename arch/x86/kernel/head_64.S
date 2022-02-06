@@ -234,8 +234,9 @@ ENTRY(secondary_startup_64)
 	 * init data section till per cpu areas are set up.
 	 */
 	movl	$MSR_GS_BASE,%ecx
-	movl	initial_gs(%rip),%eax
-	movl	initial_gs+4(%rip),%edx
+	movq	initial_gs(%rip),%rax
+	movq    %rax,%rdx
+	shrq	$32,%rdx
 	wrmsr	
 
 	/* esi is pointer to real mode structure with interesting info.

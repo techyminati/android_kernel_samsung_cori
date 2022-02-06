@@ -20,6 +20,7 @@
 #include <asm/io.h>
 #include <asm/system.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ciscode.h>
@@ -75,8 +76,9 @@ static int avmcs_probe(struct pcmcia_device *p_dev)
 {
 
     /* The io structure describes IO port mapping */
-    p_dev->resource[0]->end = 16;
-    p_dev->resource[0]->flags |= IO_DATA_PATH_WIDTH_8;
+    p_dev->io.NumPorts1 = 16;
+    p_dev->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
+    p_dev->io.NumPorts2 = 0;
 
     /* General socket configuration */
     p_dev->conf.Attributes = CONF_ENABLE_IRQ;
@@ -118,9 +120,13 @@ static int avmcs_configcheck(struct pcmcia_device *p_dev,
 	if (cf->io.nwin <= 0)
 		return -ENODEV;
 
-	p_dev->resource[0]->start = cf->io.win[0].base;
-	p_dev->resource[0]->end = cf->io.win[0].len;
-	return pcmcia_request_io(p_dev);
+	p_dev->io.BasePort1 = cf->io.win[0].base;
+	p_dev->io.NumPorts1 = cf->io.win[0].len;
+	p_dev->io.NumPorts2 = 0;
+	printk(KERN_INFO "avm_cs: testing i/o %#x-%#x\n",
+	       p_dev->io.BasePort1,
+	       p_dev->io.BasePort1+p_dev->io.NumPorts1-1);
+	return pcmcia_request_io(p_dev, &p_dev->io);
 }
 
 static int avmcs_config(struct pcmcia_device *link)
@@ -186,10 +192,9 @@ static int avmcs_config(struct pcmcia_device *link)
 	default:
         case AVM_CARDTYPE_B1: addcard = b1pcmcia_addcard_b1; break;
     }
-    if ((i = (*addcard)(link->resource[0]->start, link->irq)) < 0) {
-	    dev_err(&link->dev,
-		    "avm_cs: failed to add AVM-Controller at i/o %#x, irq %d\n",
-		    (unsigned int) link->resource[0]->start, link->irq);
+    if ((i = (*addcard)(link->io.BasePort1, link->irq)) < 0) {
+	    dev_err(&link->dev, "avm_cs: failed to add AVM-Controller at i/o %#x, irq %d\n",
+		    link->io.BasePort1, link->irq);
 	    avmcs_release(link);
 	    return -ENODEV;
     }
@@ -207,7 +212,7 @@ static int avmcs_config(struct pcmcia_device *link)
 
 static void avmcs_release(struct pcmcia_device *link)
 {
-	b1pcmcia_delcard(link->resource[0]->start, link->irq);
+	b1pcmcia_delcard(link->io.BasePort1, link->irq);
 	pcmcia_disable_device(link);
 } /* avmcs_release */
 

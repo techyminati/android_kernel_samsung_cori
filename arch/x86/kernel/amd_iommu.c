@@ -2572,11 +2572,6 @@ static phys_addr_t amd_iommu_iova_to_phys(struct iommu_domain *dom,
 static int amd_iommu_domain_has_cap(struct iommu_domain *domain,
 				    unsigned long cap)
 {
-	switch (cap) {
-	case IOMMU_CAP_CACHE_COHERENCY:
-		return 1;
-	}
-
 	return 0;
 }
 
@@ -2614,7 +2609,8 @@ int __init amd_iommu_init_passthrough(void)
 
 	pt_domain->mode |= PAGE_MODE_NONE;
 
-	for_each_pci_dev(dev) {
+	while ((dev = pci_get_device(PCI_ANY_ID, PCI_ANY_ID, dev)) != NULL) {
+
 		if (!check_device(&dev->dev))
 			continue;
 

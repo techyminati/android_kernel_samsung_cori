@@ -49,6 +49,7 @@
 #include <scsi/scsi_host.h>
 #include "aha152x.h"
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ds.h>
@@ -100,8 +101,9 @@ static int aha152x_probe(struct pcmcia_device *link)
     info->p_dev = link;
     link->priv = info;
 
-    link->resource[0]->end = 0x20;
-    link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
+    link->io.NumPorts1 = 0x20;
+    link->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
+    link->io.IOAddrLines = 10;
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.IntType = INT_MEMORY_AND_IO;
     link->conf.Present = PRESENT_OPTION;
@@ -129,16 +131,15 @@ static int aha152x_config_check(struct pcmcia_device *p_dev,
 				unsigned int vcc,
 				void *priv_data)
 {
-	p_dev->io_lines = 10;
 	/* For New Media T&J, look for a SCSI window */
 	if (cfg->io.win[0].len >= 0x20)
-		p_dev->resource[0]->start = cfg->io.win[0].base;
+		p_dev->io.BasePort1 = cfg->io.win[0].base;
 	else if ((cfg->io.nwin > 1) &&
 		 (cfg->io.win[1].len >= 0x20))
-		p_dev->resource[0]->start = cfg->io.win[1].base;
+		p_dev->io.BasePort1 = cfg->io.win[1].base;
 	if ((cfg->io.nwin > 0) &&
-	    (p_dev->resource[0]->start < 0xffff)) {
-		if (!pcmcia_request_io(p_dev))
+	    (p_dev->io.BasePort1 < 0xffff)) {
+		if (!pcmcia_request_io(p_dev, &p_dev->io))
 			return 0;
 	}
 	return -EINVAL;
@@ -167,7 +168,7 @@ static int aha152x_config_cs(struct pcmcia_device *link)
     /* Set configuration options for the aha152x driver */
     memset(&s, 0, sizeof(s));
     s.conf        = "PCMCIA setup";
-    s.io_port     = link->resource[0]->start;
+    s.io_port     = link->io.BasePort1;
     s.irq         = link->irq;
     s.scsiid      = host_id;
     s.reconnect   = reconnect;

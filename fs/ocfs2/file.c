@@ -1233,25 +1233,17 @@ int ocfs2_setattr(struct dentry *dentry, struct iattr *attr)
 	}
 
 	/*
-	 * This will intentionally not wind up calling truncate_setsize(),
+	 * This will intentionally not wind up calling simple_setsize(),
 	 * since all the work for a size change has been done above.
 	 * Otherwise, we could get into problems with truncate as
 	 * ip_alloc_sem is used there to protect against i_size
 	 * changes.
-	 *
-	 * XXX: this means the conditional below can probably be removed.
 	 */
-	if ((attr->ia_valid & ATTR_SIZE) &&
-	    attr->ia_size != i_size_read(inode)) {
-		status = vmtruncate(inode, attr->ia_size);
-		if (status) {
-			mlog_errno(status);
-			goto bail_commit;
-		}
+	status = inode_setattr(inode, attr);
+	if (status < 0) {
+		mlog_errno(status);
+		goto bail_commit;
 	}
-
-	setattr_copy(inode, attr);
-	mark_inode_dirty(inode);
 
 	status = ocfs2_mark_inode_dirty(handle, inode, bh);
 	if (status < 0)
@@ -2308,12 +2300,12 @@ relock:
 			 * blocks outside i_size. Trim these off again.
 			 * Don't need i_size_read because we hold i_mutex.
 			 *
-			 * XXX(truncate): this looks buggy because ocfs2 did not
+			 * XXX(hch): this looks buggy because ocfs2 did not
 			 * actually implement ->truncate.  Take a look at
 			 * the new truncate sequence and update this accordingly
 			 */
 			if (*ppos + count > inode->i_size)
-				truncate_setsize(inode, inode->i_size);
+				simple_setsize(inode, inode->i_size);
 			ret = written;
 			goto out_dio;
 		}

@@ -375,10 +375,12 @@ static int __devinit au1xpsc_ac97_drvprobe(struct platform_device *pdev)
 	}
 
 	ret = -EBUSY;
-	if (!request_mem_region(r->start, resource_size(r), pdev->name))
+	wd->ioarea = request_mem_region(r->start, r->end - r->start + 1,
+					"au1xpsc_ac97");
+	if (!wd->ioarea)
 		goto out0;
 
-	wd->mmio = ioremap(r->start, resource_size(r));
+	wd->mmio = ioremap(r->start, 0xffff);
 	if (!wd->mmio)
 		goto out1;
 
@@ -408,7 +410,8 @@ static int __devinit au1xpsc_ac97_drvprobe(struct platform_device *pdev)
 
 	snd_soc_unregister_dai(&au1xpsc_ac97_dai);
 out1:
-	release_mem_region(r->start, resource_size(r));
+	release_resource(wd->ioarea);
+	kfree(wd->ioarea);
 out0:
 	kfree(wd);
 	return ret;
@@ -417,7 +420,6 @@ out0:
 static int __devexit au1xpsc_ac97_drvremove(struct platform_device *pdev)
 {
 	struct au1xpsc_audio_data *wd = platform_get_drvdata(pdev);
-	struct resource *r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	if (wd->dmapd)
 		au1xpsc_pcm_destroy(wd->dmapd);
@@ -431,7 +433,8 @@ static int __devexit au1xpsc_ac97_drvremove(struct platform_device *pdev)
 	au_sync();
 
 	iounmap(wd->mmio);
-	release_mem_region(r->start, resource_size(r));
+	release_resource(wd->ioarea);
+	kfree(wd->ioarea);
 	kfree(wd);
 
 	au1xpsc_ac97_workdata = NULL;	/* MDEV */

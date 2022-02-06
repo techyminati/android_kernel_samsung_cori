@@ -287,7 +287,7 @@ static void __init htcherald_init(void)
 	htcherald_disable_watchdog();
 
 	htcherald_usb_enable();
-	omap1_usb_init(&htcherald_usb_config);
+	omap_usb_init(&htcherald_usb_config);
 }
 
 static void __init htcherald_init_irq(void)
@@ -304,7 +304,6 @@ MACHINE_START(HERALD, "HTC Herald")
 	.io_pg_offst    = ((0xfef00000) >> 18) & 0xfffc,
 	.boot_params    = 0x10000100,
 	.map_io         = htcherald_map_io,
-	.reserve	= omap_reserve,
 	.init_irq       = htcherald_init_irq,
 	.init_machine   = htcherald_init,
 	.timer          = &omap_timer,

@@ -305,23 +305,30 @@ static void m5602_urb_complete(struct gspca_dev *gspca_dev,
 		       sd->frame_count);
 
 	} else {
+		struct gspca_frame *frame;
 		int cur_frame_len;
 
-		cur_frame_len = gspca_dev->image_len;
+		frame = gspca_get_i_frame(gspca_dev);
+		if (frame == NULL) {
+			gspca_dev->last_packet_type = DISCARD_PACKET;
+			return;
+		}
+
+		cur_frame_len = frame->data_end - frame->data;
 		/* Remove urb header */
 		data += 4;
 		len -= 4;
 
-		if (cur_frame_len + len <= gspca_dev->frsz) {
+		if (cur_frame_len + len <= frame->v4l2_buf.length) {
 			PDEBUG(D_FRAM, "Continuing frame %d copying %d bytes",
 			       sd->frame_count, len);
 
 			gspca_frame_add(gspca_dev, INTER_PACKET,
 					data, len);
-		} else {
+		} else if (frame->v4l2_buf.length - cur_frame_len > 0) {
 			/* Add the remaining data up to frame size */
 			gspca_frame_add(gspca_dev, INTER_PACKET, data,
-				    gspca_dev->frsz - cur_frame_len);
+				    frame->v4l2_buf.length - cur_frame_len);
 		}
 	}
 }

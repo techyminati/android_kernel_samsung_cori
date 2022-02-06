@@ -19,7 +19,6 @@
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/interrupt.h>
-#include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/workqueue.h>
 #include <linux/completion.h>
@@ -441,7 +440,6 @@ static int __init mpc512x_psc_spi_do_probe(struct device *dev, u32 regaddr,
 	master->setup = mpc512x_psc_spi_setup;
 	master->transfer = mpc512x_psc_spi_transfer;
 	master->cleanup = mpc512x_psc_spi_cleanup;
-	master->dev.of_node = dev->of_node;
 
 	tempp = ioremap(regaddr, size);
 	if (!tempp) {
@@ -507,7 +505,7 @@ static int __exit mpc512x_psc_spi_do_remove(struct device *dev)
 	return 0;
 }
 
-static int __init mpc512x_psc_spi_of_probe(struct platform_device *op,
+static int __init mpc512x_psc_spi_of_probe(struct of_device *op,
 					   const struct of_device_id *match)
 {
 	const u32 *regaddr_p;
@@ -539,7 +537,7 @@ static int __init mpc512x_psc_spi_of_probe(struct platform_device *op,
 				irq_of_parse_and_map(op->dev.of_node, 0), id);
 }
 
-static int __exit mpc512x_psc_spi_of_remove(struct platform_device *op)
+static int __exit mpc512x_psc_spi_of_remove(struct of_device *op)
 {
 	return mpc512x_psc_spi_do_remove(&op->dev);
 }

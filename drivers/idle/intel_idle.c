@@ -231,7 +231,7 @@ static int intel_idle(struct cpuidle_device *dev, struct cpuidle_state *state)
 
 	stop_critical_timings();
 #ifndef MODULE
-	trace_power_start(POWER_CSTATE, (eax >> 4) + 1, cpu);
+	trace_power_start(POWER_CSTATE, (eax >> 4) + 1);
 #endif
 	if (!need_resched()) {
 

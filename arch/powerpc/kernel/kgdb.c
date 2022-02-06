@@ -129,7 +129,7 @@ static int kgdb_handle_breakpoint(struct pt_regs *regs)
 		return 0;
 
 	if (*(u32 *) (regs->nip) == *(u32 *) (&arch_kgdb_ops.gdb_bpt_instr))
-		regs->nip += BREAK_INSTR_SIZE;
+		regs->nip += 4;
 
 	return 1;
 }

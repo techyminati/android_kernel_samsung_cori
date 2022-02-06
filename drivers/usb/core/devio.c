@@ -1668,10 +1668,13 @@ static int proc_ioctl(struct dev_state *ps, struct usbdevfs_ioctl *ctl)
 	default:
 		if (intf->dev.driver)
 			driver = to_usb_driver(intf->dev.driver);
-		if (driver == NULL || driver->unlocked_ioctl == NULL) {
+		if (driver == NULL || driver->ioctl == NULL) {
 			retval = -ENOTTY;
 		} else {
-			retval = driver->unlocked_ioctl(intf, ctl->ioctl_code, buf);
+			/* keep API that guarantees BKL */
+			lock_kernel();
+			retval = driver->ioctl(intf, ctl->ioctl_code, buf);
+			unlock_kernel();
 			if (retval == -ENOIOCTLCMD)
 				retval = -ENOTTY;
 		}

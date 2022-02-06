@@ -42,6 +42,7 @@
 #include <linux/mii.h>
 #include "../8390.h"
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ciscode.h>
@@ -111,6 +112,8 @@ static int setup_dma_config(struct pcmcia_device *link, int start_pg,
 			    int stop_pg);
 
 static void pcnet_detach(struct pcmcia_device *p_dev);
+
+static dev_info_t dev_info = "pcnet_cs";
 
 /*====================================================================*/
 
@@ -301,6 +304,7 @@ static hw_info_t *get_hwinfo(struct pcmcia_device *link)
 {
     struct net_device *dev = link->priv;
     win_req_t req;
+    memreq_t mem;
     u_char __iomem *base, *virt;
     int i, j;
 
@@ -313,8 +317,10 @@ static hw_info_t *get_hwinfo(struct pcmcia_device *link)
 	return NULL;
 
     virt = ioremap(req.Base, req.Size);
+    mem.Page = 0;
     for (i = 0; i < NR_INFO; i++) {
-	pcmcia_map_mem_page(link, link->win, hw_info[i].offset & ~(req.Size-1));
+	mem.CardOffset = hw_info[i].offset & ~(req.Size-1);
+	pcmcia_map_mem_page(link, link->win, &mem);
 	base = &virt[hw_info[i].offset & (req.Size-1)];
 	if ((readb(base+0) == hw_info[i].a0) &&
 	    (readb(base+2) == hw_info[i].a1) &&
@@ -474,31 +480,29 @@ static hw_info_t *get_hwired(struct pcmcia_device *link)
 static int try_io_port(struct pcmcia_device *link)
 {
     int j, ret;
-    link->resource[0]->flags &= ~IO_DATA_PATH_WIDTH;
-    link->resource[1]->flags &= ~IO_DATA_PATH_WIDTH;
-    if (link->resource[0]->end == 32) {
-	link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
-	if (link->resource[1]->end > 0) {
+    if (link->io.NumPorts1 == 32) {
+	link->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
+	if (link->io.NumPorts2 > 0) {
 	    /* for master/slave multifunction cards */
-	    link->resource[1]->flags |= IO_DATA_PATH_WIDTH_8;
+	    link->io.Attributes2 = IO_DATA_PATH_WIDTH_8;
 	}
     } else {
 	/* This should be two 16-port windows */
-	link->resource[0]->flags |= IO_DATA_PATH_WIDTH_8;
-	link->resource[1]->flags |= IO_DATA_PATH_WIDTH_16;
+	link->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
+	link->io.Attributes2 = IO_DATA_PATH_WIDTH_16;
     }
-    if (link->resource[0]->start == 0) {
+    if (link->io.BasePort1 == 0) {
+	link->io.IOAddrLines = 16;
 	for (j = 0; j < 0x400; j += 0x20) {
-	    link->resource[0]->start = j ^ 0x300;
-	    link->resource[1]->start = (j ^ 0x300) + 0x10;
-	    link->io_lines = 16;
-	    ret = pcmcia_request_io(link);
+	    link->io.BasePort1 = j ^ 0x300;
+	    link->io.BasePort2 = (j ^ 0x300) + 0x10;
+	    ret = pcmcia_request_io(link, &link->io);
 	    if (ret == 0)
 		    return ret;
 	}
 	return ret;
     } else {
-	return pcmcia_request_io(link);
+	return pcmcia_request_io(link, &link->io);
     }
 }
 
@@ -519,18 +523,18 @@ static int pcnet_confcheck(struct pcmcia_device *p_dev,
 	   network function with window 0, and serial with window 1 */
 	if (io->nwin > 1) {
 		i = (io->win[1].len > io->win[0].len);
-		p_dev->resource[1]->start = io->win[1-i].base;
-		p_dev->resource[1]->end = io->win[1-i].len;
+		p_dev->io.BasePort2 = io->win[1-i].base;
+		p_dev->io.NumPorts2 = io->win[1-i].len;
 	} else {
-		i = p_dev->resource[1]->end = 0;
+		i = p_dev->io.NumPorts2 = 0;
 	}
 
 	*has_shmem = ((cfg->mem.nwin == 1) &&
 		      (cfg->mem.win[0].len >= 0x4000));
-	p_dev->resource[0]->start = io->win[i].base;
-	p_dev->resource[0]->end = io->win[i].len;
-	p_dev->io_lines = io->flags & CISTPL_IO_LINES_MASK;
-	if (p_dev->resource[0]->end + p_dev->resource[1]->end >= 32)
+	p_dev->io.BasePort1 = io->win[i].base;
+	p_dev->io.NumPorts1 = io->win[i].len;
+	p_dev->io.IOAddrLines = io->flags & CISTPL_IO_LINES_MASK;
+	if (p_dev->io.NumPorts1 + p_dev->io.NumPorts2 >= 32)
 		return try_io_port(p_dev);
 
 	return 0;
@@ -553,7 +557,7 @@ static int pcnet_config(struct pcmcia_device *link)
     if (!link->irq)
 	    goto failed;
 
-    if (resource_size(link->resource[1]) == 8) {
+    if (link->io.NumPorts2 == 8) {
 	link->conf.Attributes |= CONF_ENABLE_SPKR;
 	link->conf.Status = CCSR_AUDIO_ENA;
     }
@@ -565,7 +569,7 @@ static int pcnet_config(struct pcmcia_device *link)
     if (ret)
 	    goto failed;
     dev->irq = link->irq;
-    dev->base_addr = link->resource[0]->start;
+    dev->base_addr = link->io.BasePort1;
     if (info->flags & HAS_MISC_REG) {
 	if ((if_port == 1) || (if_port == 2))
 	    dev->if_port = if_port;
@@ -952,7 +956,7 @@ static int pcnet_open(struct net_device *dev)
     set_misc_reg(dev);
 
     outb_p(0xFF, nic_base + EN0_ISR); /* Clear bogus intr. */
-    ret = request_irq(dev->irq, ei_irq_wrapper, IRQF_SHARED, dev->name, dev);
+    ret = request_irq(dev->irq, ei_irq_wrapper, IRQF_SHARED, dev_info, dev);
     if (ret)
 	    return ret;
 
@@ -1460,6 +1464,7 @@ static int setup_shmem_window(struct pcmcia_device *link, int start_pg,
     struct net_device *dev = link->priv;
     pcnet_dev_t *info = PRIV(dev);
     win_req_t req;
+    memreq_t mem;
     int i, window_size, offset, ret;
 
     window_size = (stop_pg - start_pg) << 8;
@@ -1478,9 +1483,11 @@ static int setup_shmem_window(struct pcmcia_device *link, int start_pg,
     if (ret)
 	    goto failed;
 
-    offset = (start_pg << 8) + cm_offset;
-    offset -= offset % window_size;
-    ret = pcmcia_map_mem_page(link, link->win, offset);
+    mem.CardOffset = (start_pg << 8) + cm_offset;
+    offset = mem.CardOffset % window_size;
+    mem.CardOffset -= offset;
+    mem.Page = 0;
+    ret = pcmcia_map_mem_page(link, link->win, &mem);
     if (ret)
 	    goto failed;
 

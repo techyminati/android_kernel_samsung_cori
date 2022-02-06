@@ -43,6 +43,7 @@
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/tty.h>
+#include <linux/timer.h>
 #include <linux/ctype.h>
 #include <linux/mm.h>
 #include <linux/string.h>
@@ -919,7 +920,7 @@ static void gsm_dlci_data_sweep(struct gsm_mux *gsm)
 		else
 			len = gsm_dlci_data_output_framed(gsm, dlci);
 		if (len < 0)
-			break;
+			return;
 		/* DLCI empty - try the next */
 		if (len == 0)
 			i++;

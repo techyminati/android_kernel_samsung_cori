@@ -143,6 +143,8 @@ struct nfs4_cb_compound_hdr {
 	u32		minorversion;
 	/* res */
 	int		status;
+	u32		taglen;
+	char		*tag;
 };
 
 static struct {
@@ -203,16 +205,6 @@ nfs_cb_stat_to_errno(int stat)
  */
 
 static void
-encode_stateid(struct xdr_stream *xdr, stateid_t *sid)
-{
-	__be32 *p;
-
-	RESERVE_SPACE(sizeof(stateid_t));
-	WRITE32(sid->si_generation);
-	WRITEMEM(&sid->si_opaque, sizeof(stateid_opaque_t));
-}
-
-static void
 encode_cb_compound_hdr(struct xdr_stream *xdr, struct nfs4_cb_compound_hdr *hdr)
 {
 	__be32 * p;
@@ -237,10 +229,10 @@ encode_cb_recall(struct xdr_stream *xdr, struct nfs4_delegation *dp,
 	__be32 *p;
 	int len = dp->dl_fh.fh_size;
 
-	RESERVE_SPACE(4);
+	RESERVE_SPACE(12+sizeof(dp->dl_stateid) + len);
 	WRITE32(OP_CB_RECALL);
-	encode_stateid(xdr, &dp->dl_stateid);
-	RESERVE_SPACE(8 + (XDR_QUADLEN(len) << 2));
+	WRITE32(dp->dl_stateid.si_generation);
+	WRITEMEM(&dp->dl_stateid.si_opaque, sizeof(stateid_opaque_t));
 	WRITE32(0); /* truncate optimization not implemented */
 	WRITE32(len);
 	WRITEMEM(&dp->dl_fh.fh_base, len);
@@ -301,14 +293,13 @@ nfs4_xdr_enc_cb_recall(struct rpc_rqst *req, __be32 *p,
 static int
 decode_cb_compound_hdr(struct xdr_stream *xdr, struct nfs4_cb_compound_hdr *hdr){
         __be32 *p;
-	u32 taglen;
 
         READ_BUF(8);
         READ32(hdr->status);
-	/* We've got no use for the tag; ignore it: */
-        READ32(taglen);
-        READ_BUF(taglen + 4);
-        p += XDR_QUADLEN(taglen);
+        READ32(hdr->taglen);
+        READ_BUF(hdr->taglen + 4);
+        hdr->tag = (char *)p;
+        p += XDR_QUADLEN(hdr->taglen);
         READ32(hdr->nops);
         return 0;
 }
@@ -676,28 +667,28 @@ static void nfsd4_cb_recall_done(struct rpc_task *task, void *calldata)
 	}
 
 	switch (task->tk_status) {
-	case 0:
-		return;
+	case -EIO:
+		/* Network partition? */
+		atomic_set(&clp->cl_cb_set, 0);
+		warn_no_callback_path(clp, task->tk_status);
+		if (current_rpc_client != task->tk_client) {
+			/* queue a callback on the new connection: */
+			nfsd4_cb_recall(dp);
+			return;
+		}
 	case -EBADHANDLE:
 	case -NFS4ERR_BAD_STATEID:
 		/* Race: client probably got cb_recall
 		 * before open reply granting delegation */
 		break;
 	default:
-		/* Network partition? */
-		atomic_set(&clp->cl_cb_set, 0);
-		warn_no_callback_path(clp, task->tk_status);
-		if (current_rpc_client != task->tk_client) {
-			/* queue a callback on the new connection: */
-			atomic_inc(&dp->dl_count);
-			nfsd4_cb_recall(dp);
-			return;
-		}
+		/* success, or error we can't handle */
+		return;
 	}
 	if (dp->dl_retries--) {
 		rpc_delay(task, 2*HZ);
 		task->tk_status = 0;
-		rpc_restart_call_prepare(task);
+		rpc_restart_call(task);
 		return;
 	} else {
 		atomic_set(&clp->cl_cb_set, 0);
@@ -761,16 +752,18 @@ static void _nfsd4_cb_recall(struct nfs4_delegation *dp)
 		.rpc_proc = &nfs4_cb_procedures[NFSPROC4_CLNT_CB_RECALL],
 		.rpc_cred = callback_cred
 	};
+	int status;
 
-	if (clnt == NULL) {
-		nfs4_put_delegation(dp);
+	if (clnt == NULL)
 		return; /* Client is shutting down; give up. */
-	}
 
 	args->args_op = dp;
 	msg.rpc_argp = args;
 	dp->dl_retries = 1;
-	rpc_call_async(clnt, &msg, RPC_TASK_SOFT, &nfsd4_cb_recall_ops, dp);
+	status = rpc_call_async(clnt, &msg, RPC_TASK_SOFT,
+				&nfsd4_cb_recall_ops, dp);
+	if (status)
+		nfs4_put_delegation(dp);
 }
 
 void nfsd4_do_callback_rpc(struct work_struct *w)

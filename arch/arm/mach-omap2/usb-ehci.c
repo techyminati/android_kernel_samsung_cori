@@ -23,6 +23,7 @@
 #include <linux/dma-mapping.h>
 
 #include <asm/io.h>
+#include <plat/mux.h>
 
 #include <mach/hardware.h>
 #include <mach/irqs.h>

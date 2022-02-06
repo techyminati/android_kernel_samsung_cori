@@ -18,7 +18,7 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
-#include <linux/mutex.h>
+#include <linux/smp_lock.h>
 #include <linux/poll.h>
 #include <linux/usb/iowarrior.h>
 
@@ -61,7 +61,6 @@ MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
 
 /* Module parameters */
-static DEFINE_MUTEX(iowarrior_mutex);
 static int debug = 0;
 module_param(debug, bool, 0644);
 MODULE_PARM_DESC(debug, "debug=1 enables debugging messages");
@@ -283,7 +282,7 @@ static ssize_t iowarrior_read(struct file *file, char __user *buffer,
 	int read_idx;
 	int offset;
 
-	dev = file->private_data;
+	dev = (struct iowarrior *)file->private_data;
 
 	/* verify that the device wasn't unplugged */
 	if (dev == NULL || !dev->present)
@@ -349,7 +348,7 @@ static ssize_t iowarrior_write(struct file *file,
 	char *buf = NULL;	/* for IOW24 and IOW56 we need a buffer */
 	struct urb *int_out_urb = NULL;
 
-	dev = file->private_data;
+	dev = (struct iowarrior *)file->private_data;
 
 	mutex_lock(&dev->mutex);
 	/* verify that the device wasn't unplugged */
@@ -484,7 +483,7 @@ static long iowarrior_ioctl(struct file *file, unsigned int cmd,
 	int retval;
 	int io_res;		/* checks for bytes read/written and copy_to/from_user results */
 
-	dev = file->private_data;
+	dev = (struct iowarrior *)file->private_data;
 	if (dev == NULL) {
 		return -ENODEV;
 	}
@@ -494,7 +493,7 @@ static long iowarrior_ioctl(struct file *file, unsigned int cmd,
 		return -ENOMEM;
 
 	/* lock this object */
-	mutex_lock(&iowarrior_mutex);
+	lock_kernel();
 	mutex_lock(&dev->mutex);
 
 	/* verify that the device wasn't unplugged */
@@ -586,7 +585,7 @@ static long iowarrior_ioctl(struct file *file, unsigned int cmd,
 error_out:
 	/* unlock the device */
 	mutex_unlock(&dev->mutex);
-	mutex_unlock(&iowarrior_mutex);
+	unlock_kernel();
 	kfree(buffer);
 	return retval;
 }
@@ -603,12 +602,12 @@ static int iowarrior_open(struct inode *inode, struct file *file)
 
 	dbg("%s", __func__);
 
-	mutex_lock(&iowarrior_mutex);
+	lock_kernel();
 	subminor = iminor(inode);
 
 	interface = usb_find_interface(&iowarrior_driver, subminor);
 	if (!interface) {
-		mutex_unlock(&iowarrior_mutex);
+		unlock_kernel();
 		err("%s - error, can't find device for minor %d", __func__,
 		    subminor);
 		return -ENODEV;
@@ -618,7 +617,7 @@ static int iowarrior_open(struct inode *inode, struct file *file)
 	dev = usb_get_intfdata(interface);
 	if (!dev) {
 		mutex_unlock(&iowarrior_open_disc_lock);
-		mutex_unlock(&iowarrior_mutex);
+		unlock_kernel();
 		return -ENODEV;
 	}
 
@@ -645,7 +644,7 @@ static int iowarrior_open(struct inode *inode, struct file *file)
 
 out:
 	mutex_unlock(&dev->mutex);
-	mutex_unlock(&iowarrior_mutex);
+	unlock_kernel();
 	return retval;
 }
 
@@ -657,7 +656,7 @@ static int iowarrior_release(struct inode *inode, struct file *file)
 	struct iowarrior *dev;
 	int retval = 0;
 
-	dev = file->private_data;
+	dev = (struct iowarrior *)file->private_data;
 	if (dev == NULL) {
 		return -ENODEV;
 	}

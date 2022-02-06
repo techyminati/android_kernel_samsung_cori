@@ -1482,7 +1482,7 @@ static int __devinit i5000_init_one(struct pci_dev *pdev,
 
 	/* wake up device */
 	rc = pci_enable_device(pdev);
-	if (rc)
+	if (rc == -EIO)
 		return rc;
 
 	/* now probe and enable the device */

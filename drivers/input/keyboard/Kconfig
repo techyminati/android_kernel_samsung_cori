@@ -134,6 +134,13 @@ config KEYBOARD_QT2160
 	  This driver can also be built as a module. If so, the module
 	  will be called qt2160.
 
+config KEYBOARD_BCM
+         bool "BCM keypad"
+         depends on (ARCH_BCM215XX || ARCH_BCM116X) && !(INPUT_GPIO)
+         default y
+         help
+           BCM keypad
+
 config KEYBOARD_BFIN
 	tristate "Blackfin BF54x keypad support"
 	depends on (BF54x && !BF544)
@@ -297,18 +304,6 @@ config KEYBOARD_MAX7359
 	  To compile this driver as a module, choose M here: the
 	  module will be called max7359_keypad.
 
-config KEYBOARD_MCS
-	tristate "MELFAS MCS Touchkey"
-	depends on I2C
-	help
-	  Say Y here if you have the MELFAS MCS5000/5080 touchkey controller
-	  chip in your system.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called mcs_touchkey.
-
 config KEYBOARD_IMX
 	tristate "IMX keypad support"
 	depends on ARCH_MXC
@@ -354,15 +349,6 @@ config KEYBOARD_PXA930_ROTARY
 	  To compile this driver as a module, choose M here: the
 	  module will be called pxa930_rotary.
 
-config KEYBOARD_SAMSUNG
-	tristate "Samsung keypad support"
-	depends on SAMSUNG_DEV_KEYPAD
-	help
-	  Say Y here if you want to use the Samsung keypad.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called samsung-keypad.
-
 config KEYBOARD_STOWAWAY
 	tristate "Stowaway keyboard"
 	select SERIO
@@ -394,16 +380,6 @@ config KEYBOARD_SH_KEYSC
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called sh_keysc.
-
-config KEYBOARD_STMPE
-	tristate "STMPE keypad support"
-	depends on MFD_STMPE
-	help
-	  Say Y here if you want to use the keypad controller on STMPE I/O
-	  expanders.
-
-	  To compile this driver as a module, choose M here: the module will be
-	  called stmpe-keypad.
 
 config KEYBOARD_DAVINCI
 	tristate "TI DaVinci Key Scan"
@@ -456,5 +432,16 @@ config KEYBOARD_W90P910
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called w90p910_keypad.
+
+config OFM_DRIVER
+	tristate "OFM based optical mouse"
+	depends on I2C
+	help
+	  Say Y here if you have a OFM  based mouse.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called OFM.
 
 endif

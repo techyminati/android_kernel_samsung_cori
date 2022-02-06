@@ -186,15 +186,6 @@
 #define PORT_ALTERA_JTAGUART	91
 #define PORT_ALTERA_UART	92
 
-/* SH-SCI */
-#define PORT_SCIFB	93
-
-/* MAX3107 */
-#define PORT_MAX3107	94
-
-/* High Speed UART for Medfield */
-#define PORT_MFD	95
-
 #ifdef __KERNEL__
 
 #include <linux/compiler.h>
@@ -229,10 +220,11 @@ struct uart_ops {
 	void		(*flush_buffer)(struct uart_port *);
 	void		(*set_termios)(struct uart_port *, struct ktermios *new,
 				       struct ktermios *old);
-	void		(*set_ldisc)(struct uart_port *, int new);
+	void		(*set_ldisc)(struct uart_port *);
 	void		(*pm)(struct uart_port *, unsigned int state,
 			      unsigned int oldstate);
 	int		(*set_wake)(struct uart_port *, unsigned int state);
+	void		(*wake_peer)(struct uart_port *);
 
 	/*
 	 * Return a string describing the type of the port
@@ -285,9 +277,6 @@ struct uart_port {
 	unsigned char __iomem	*membase;		/* read/write[bwl] */
 	unsigned int		(*serial_in)(struct uart_port *, int);
 	void			(*serial_out)(struct uart_port *, int, int);
-	void			(*set_termios)(struct uart_port *,
-				               struct ktermios *new,
-				               struct ktermios *old);
 	unsigned int		irq;			/* irq number */
 	unsigned long		irqflags;		/* irq flags  */
 	unsigned int		uartclk;		/* base uart clock */

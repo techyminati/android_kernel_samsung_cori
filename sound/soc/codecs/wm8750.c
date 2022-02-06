@@ -884,7 +884,6 @@ static int wm8750_i2c_remove(struct i2c_client *client)
 
 static const struct i2c_device_id wm8750_i2c_id[] = {
 	{ "wm8750", 0 },
-	{ "wm8987", 0 }, /* WM8987 is register compatible with WM8750 */
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, wm8750_i2c_id);
@@ -926,22 +925,14 @@ static int __devexit wm8750_spi_remove(struct spi_device *spi)
 	return 0;
 }
 
-static const struct spi_device_id wm8750_spi_id[] = {
-	{ "wm8750", 0 },
-	{ "wm8987", 0 },
-	{ }
-};
-MODULE_DEVICE_TABLE(spi, wm8750_spi_id);
-
 static struct spi_driver wm8750_spi_driver = {
 	.driver = {
-		.name	= "WM8750 SPI Codec",
+		.name	= "wm8750",
 		.bus	= &spi_bus_type,
 		.owner	= THIS_MODULE,
 	},
 	.probe		= wm8750_spi_probe,
 	.remove		= __devexit_p(wm8750_spi_remove),
-	.id_table	= wm8750_spi_id,
 };
 #endif
 

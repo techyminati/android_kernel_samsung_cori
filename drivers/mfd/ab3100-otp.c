@@ -199,7 +199,7 @@ static int __init ab3100_otp_probe(struct platform_device *pdev)
 
 	err = ab3100_otp_read(otp);
 	if (err)
-		goto err_otp_read;
+		return err;
 
 	dev_info(&pdev->dev, "AB3100 OTP readout registered\n");
 
@@ -208,21 +208,21 @@ static int __init ab3100_otp_probe(struct platform_device *pdev)
 		err = device_create_file(&pdev->dev,
 					 &ab3100_otp_attrs[i]);
 		if (err)
-			goto err_create_file;
+			goto out_no_sysfs;
 	}
 
 	/* debugfs entries */
 	err = ab3100_otp_init_debugfs(&pdev->dev, otp);
 	if (err)
-		goto err_init_debugfs;
+		goto out_no_debugfs;
 
 	return 0;
 
-err_init_debugfs:
-err_create_file:
-	while (--i >= 0)
-		device_remove_file(&pdev->dev, &ab3100_otp_attrs[i]);
-err_otp_read:
+out_no_sysfs:
+	for (i = 0; i < ARRAY_SIZE(ab3100_otp_attrs); i++)
+		device_remove_file(&pdev->dev,
+				   &ab3100_otp_attrs[i]);
+out_no_debugfs:
 	kfree(otp);
 	return err;
 }

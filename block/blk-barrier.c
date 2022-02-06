@@ -13,6 +13,7 @@
  * blk_queue_ordered - does this queue support ordered writes
  * @q:        the request queue
  * @ordered:  one of QUEUE_ORDERED_*
+ * @prepare_flush_fn: rq setup helper for cache flush ordered writes
  *
  * Description:
  *   For journalled file systems, doing ordered writes on a commit
@@ -21,8 +22,15 @@
  *   feature should call this function and indicate so.
  *
  **/
-int blk_queue_ordered(struct request_queue *q, unsigned ordered)
+int blk_queue_ordered(struct request_queue *q, unsigned ordered,
+		      prepare_flush_fn *prepare_flush_fn)
 {
+	if (!prepare_flush_fn && (ordered & (QUEUE_ORDERED_DO_PREFLUSH |
+					     QUEUE_ORDERED_DO_POSTFLUSH))) {
+		printk(KERN_ERR "%s: prepare_flush_fn required\n", __func__);
+		return -EINVAL;
+	}
+
 	if (ordered != QUEUE_ORDERED_NONE &&
 	    ordered != QUEUE_ORDERED_DRAIN &&
 	    ordered != QUEUE_ORDERED_DRAIN_FLUSH &&
@@ -36,6 +44,7 @@ int blk_queue_ordered(struct request_queue *q, unsigned ordered)
 
 	q->ordered = ordered;
 	q->next_ordered = ordered;
+	q->prepare_flush_fn = prepare_flush_fn;
 
 	return 0;
 }
@@ -70,7 +79,7 @@ unsigned blk_ordered_req_seq(struct request *rq)
 	 *
 	 * http://thread.gmane.org/gmane.linux.kernel/537473
 	 */
-	if (rq->cmd_type != REQ_TYPE_FS)
+	if (!blk_fs_request(rq))
 		return QUEUE_ORDSEQ_DRAIN;
 
 	if ((rq->cmd_flags & REQ_ORDERED_COLOR) ==
@@ -134,10 +143,10 @@ static void queue_flush(struct request_queue *q, unsigned which)
 	}
 
 	blk_rq_init(q, rq);
-	rq->cmd_type = REQ_TYPE_FS;
-	rq->cmd_flags = REQ_HARDBARRIER | REQ_FLUSH;
-	rq->rq_disk = q->orig_bar_rq->rq_disk;
+	rq->cmd_flags = REQ_HARDBARRIER;
+	rq->rq_disk = q->bar_rq.rq_disk;
 	rq->end_io = end_io;
+	q->prepare_flush_fn(q, rq);
 
 	elv_insert(q, rq, ELEVATOR_INSERT_FRONT);
 }
@@ -194,7 +203,7 @@ static inline bool start_ordered(struct request_queue *q, struct request **rqp)
 		/* initialize proxy request and queue it */
 		blk_rq_init(q, rq);
 		if (bio_data_dir(q->orig_bar_rq->bio) == WRITE)
-			rq->cmd_flags |= REQ_WRITE;
+			rq->cmd_flags |= REQ_RW;
 		if (q->ordered & QUEUE_ORDERED_DO_FUA)
 			rq->cmd_flags |= REQ_FUA;
 		init_request_from_bio(rq, q->orig_bar_rq->bio);
@@ -227,8 +236,7 @@ static inline bool start_ordered(struct request_queue *q, struct request **rqp)
 bool blk_do_ordered(struct request_queue *q, struct request **rqp)
 {
 	struct request *rq = *rqp;
-	const int is_barrier = rq->cmd_type == REQ_TYPE_FS &&
-				(rq->cmd_flags & REQ_HARDBARRIER);
+	const int is_barrier = blk_fs_request(rq) && blk_barrier_rq(rq);
 
 	if (!q->ordseq) {
 		if (!is_barrier)
@@ -253,7 +261,7 @@ bool blk_do_ordered(struct request_queue *q, struct request **rqp)
 	 */
 
 	/* Special requests are not subject to ordering rules. */
-	if (rq->cmd_type != REQ_TYPE_FS &&
+	if (!blk_fs_request(rq) &&
 	    rq != &q->pre_flush_rq && rq != &q->post_flush_rq)
 		return true;
 
@@ -309,15 +317,6 @@ int blkdev_issue_flush(struct block_device *bdev, gfp_t gfp_mask,
 
 	q = bdev_get_queue(bdev);
 	if (!q)
-		return -ENXIO;
-
-	/*
-	 * some block devices may not have their queue correctly set up here
-	 * (e.g. loop device without a backing file) and so issuing a flush
-	 * here will panic. Ensure there is a request function before issuing
-	 * the barrier.
-	 */
-	if (!q->make_request_fn)
 		return -ENXIO;
 
 	bio = bio_alloc(gfp_mask, 0);

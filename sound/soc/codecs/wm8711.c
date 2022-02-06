@@ -439,8 +439,7 @@ static int wm8711_register(struct wm8711_priv *wm8711,
 
 	if (wm8711_codec) {
 		dev_err(codec->dev, "Another WM8711 is registered\n");
-		ret = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
 	mutex_init(&codec->mutex);

@@ -183,6 +183,17 @@ config INPUT_ATI_REMOTE2
 	  To compile this driver as a module, choose M here: the module will be
 	  called ati_remote2.
 
+config INPUT_KEYCHORD
+	tristate "Key chord input driver support"
+	help
+	  Say Y here if you want to enable the key chord driver
+	  accessible at /dev/keychord.  This driver can be used
+	  for receiving notifications when client specified key
+	  combinations are pressed.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called keychord.
+
 config INPUT_KEYSPAN_REMOTE
 	tristate "Keyspan DMR USB remote control (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
@@ -214,6 +225,36 @@ config INPUT_POWERMATE
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called powermate.
+
+config INPUT_BCM59035_PONKEY
+        tristate "Broadcom BCM59035 PMU PONKEY"
+        depends on MFD_BCM59035
+        help
+          If you say yes here you will get support for the poweron button
+          feature of PMU BCM59035
+
+          This driver can also be built as a module. If so, the module
+          will be called "ponkey-bcm59035".
+
+config PONKEY_DRV_BCM59038
+        tristate "Broadcom BCM59038 PMU PONKEY"
+        depends on MFD_BCM59038
+        help
+          If you say yes here you will get support for the poweron button
+          feature of PMU BCM59038
+
+          This driver can also be built as a module. If so, the module
+          will be called "ponkey-bcm59038".
+
+config PONKEY_DRV_MAX8986
+        tristate "Maxim MAX8986 PMU PONKEY"
+        depends on MFD_MAX8986
+        help
+          If you say yes here you will get support for the poweron button
+          feature of PMU MAX8986
+
+          This driver can also be built as a module. If so, the module
+          will be called "ponkey-max8986".
 
 config INPUT_YEALINK
 	tristate "Yealink usb-p1k voip phone"
@@ -302,6 +343,11 @@ config INPUT_WINBOND_CIR
 	  To compile this driver as a module, choose M here: the module will be
 	  called winbond_cir.
 
+config INPUT_GPIOKEY_MATRIX
+	tristate "GPIO driver support"
+	help
+	  Say Y here if you want to support gpio based keys, wheels etc...
+
 config HP_SDC_RTC
 	tristate "HP SDC Real Time Clock"
 	depends on (GSC || HP300) && SERIO
@@ -326,17 +372,6 @@ config INPUT_PCF8574
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called pcf8574_keypad.
-
-config INPUT_PWM_BEEPER
-	tristate "PWM beeper support"
-	depends on HAVE_PWM
-	help
-	  Say Y here to get support for PWM based beeper devices.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the module will be
-	  called pwm-beeper.
 
 config INPUT_GPIO_ROTARY_ENCODER
 	tristate "Rotary encoders connected to GPIO pins"
@@ -401,41 +436,20 @@ config INPUT_PCAP
 	  To compile this driver as a module, choose M here: the
 	  module will be called pcap_keys.
 
-config INPUT_ADXL34X
-	tristate "Analog Devices ADXL34x Three-Axis Digital Accelerometer"
-	default n
+config INPUT_BMA150_SMB380
+	tristate "Bosch BMA150 accelerometer support"
 	help
-	  Say Y here if you have a Accelerometer interface using the
-	  ADXL345/6 controller, and your board-specific initialization
-	  code includes that in its table of devices.
+	  Say Y to enable BMA150/ SMB380 based acceleromter support
 
-	  This driver can use either I2C or SPI communication to the
-	  ADXL345/6 controller.  Select the appropriate method for
-	  your system.
+config INPUT_ONKEY_D2041
+	tristate "Onkey D2041 support"
+	depends on MFD_D2041	
 
-	  If unsure, say N (but it's safe to say "Y").
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called adxl34x.
-
-config INPUT_ADXL34X_I2C
-	tristate "support I2C bus connection"
-	depends on INPUT_ADXL34X && I2C
-	default y
+config SENSORS_AK8973
+	tristate "AK8973 3-axis Electronic Compass support"
+	depends on I2C=y
 	help
-	  Say Y here if you have ADXL345/6 hooked to an I2C bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called adxl34x-i2c.
-
-config INPUT_ADXL34X_SPI
-	tristate "support SPI bus connection"
-	depends on INPUT_ADXL34X && SPI
-	default y
-	help
-	  Say Y here if you have ADXL345/6 hooked to a SPI bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called adxl34x-spi.
+	If you say yes here you get support for Asahi Kasei's
+	orientation sensor AK8973.
 
 endif

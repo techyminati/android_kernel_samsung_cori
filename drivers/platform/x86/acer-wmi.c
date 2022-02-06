@@ -50,6 +50,17 @@ MODULE_LICENSE("GPL");
 #define ACER_INFO KERN_INFO ACER_LOGPREFIX
 
 /*
+ * The following defines quirks to get some specific functions to work
+ * which are known to not be supported over ACPI-WMI (such as the mail LED
+ * on WMID based Acer's)
+ */
+struct acer_quirks {
+	const char *vendor;
+	const char *model;
+	u16 quirks;
+};
+
+/*
  * Magic Number
  * Meaning is unknown - this number is required for writing to ACPI for AMW0
  * (it's also used in acerhk when directly accessing the BIOS)
@@ -189,7 +200,7 @@ static void set_quirks(void)
 static int dmi_matched(const struct dmi_system_id *dmi)
 {
 	quirks = dmi->driver_data;
-	return 1;
+	return 0;
 }
 
 static struct quirk_entry quirk_unknown = {
@@ -544,7 +555,6 @@ static acpi_status AMW0_find_mailled(void)
 	obj->buffer.length == sizeof(struct wmab_ret)) {
 		ret = *((struct wmab_ret *) obj->buffer.pointer);
 	} else {
-		kfree(out.pointer);
 		return AE_ERROR;
 	}
 
@@ -560,7 +570,7 @@ static acpi_status AMW0_set_capabilities(void)
 {
 	struct wmab_args args;
 	struct wmab_ret ret;
-	acpi_status status;
+	acpi_status status = AE_OK;
 	struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
 
@@ -583,13 +593,12 @@ static acpi_status AMW0_set_capabilities(void)
 	if (ACPI_FAILURE(status))
 		return status;
 
-	obj = out.pointer;
+	obj = (union acpi_object *) out.pointer;
 	if (obj && obj->type == ACPI_TYPE_BUFFER &&
 	obj->buffer.length == sizeof(struct wmab_ret)) {
 		ret = *((struct wmab_ret *) obj->buffer.pointer);
 	} else {
-		status = AE_ERROR;
-		goto out;
+		return AE_ERROR;
 	}
 
 	if (ret.eax & 0x1)
@@ -598,25 +607,22 @@ static acpi_status AMW0_set_capabilities(void)
 	args.ebx = 2 << 8;
 	args.ebx |= ACER_AMW0_BLUETOOTH_MASK;
 
-	/*
-	 * It's ok to use existing buffer for next wmab_execute call.
-	 * But we need to kfree(out.pointer) if next wmab_execute fail.
-	 */
 	status = wmab_execute(&args, &out);
 	if (ACPI_FAILURE(status))
-		goto out;
+		return status;
 
 	obj = (union acpi_object *) out.pointer;
 	if (obj && obj->type == ACPI_TYPE_BUFFER
 	&& obj->buffer.length == sizeof(struct wmab_ret)) {
 		ret = *((struct wmab_ret *) obj->buffer.pointer);
 	} else {
-		status = AE_ERROR;
-		goto out;
+		return AE_ERROR;
 	}
 
 	if (ret.eax & 0x1)
 		interface->capability |= ACER_CAP_BLUETOOTH;
+
+	kfree(out.pointer);
 
 	/*
 	 * This appears to be safe to enable, since all Wistron based laptops
@@ -626,10 +632,7 @@ static acpi_status AMW0_set_capabilities(void)
 	if (quirks->brightness >= 0)
 		interface->capability |= ACER_CAP_BRIGHTNESS;
 
-	status = AE_OK;
-out:
-	kfree(out.pointer);
-	return status;
+	return AE_OK;
 }
 
 static struct wmi_interface AMW0_interface = {
@@ -769,7 +772,6 @@ static acpi_status WMID_set_capabilities(void)
 		obj->buffer.length == sizeof(u32)) {
 		devices = *((u32 *) obj->buffer.pointer);
 	} else {
-		kfree(out.pointer);
 		return AE_ERROR;
 	}
 
@@ -786,7 +788,6 @@ static acpi_status WMID_set_capabilities(void)
 	if (!(devices & 0x20))
 		max_brightness = 0x9;
 
-	kfree(out.pointer);
 	return status;
 }
 
@@ -1083,7 +1084,8 @@ static ssize_t show_interface(struct device *dev, struct device_attribute *attr,
 	}
 }
 
-static DEVICE_ATTR(interface, S_IRUGO, show_interface, NULL);
+static DEVICE_ATTR(interface, S_IWUGO | S_IRUGO | S_IWUSR,
+	show_interface, NULL);
 
 /*
  * debugfs functions
@@ -1093,7 +1095,6 @@ static u32 get_wmid_devices(void)
 	struct acpi_buffer out = {ACPI_ALLOCATE_BUFFER, NULL};
 	union acpi_object *obj;
 	acpi_status status;
-	u32 devices = 0;
 
 	status = wmi_query_block(WMID_GUID2, 1, &out);
 	if (ACPI_FAILURE(status))
@@ -1102,11 +1103,10 @@ static u32 get_wmid_devices(void)
 	obj = (union acpi_object *) out.pointer;
 	if (obj && obj->type == ACPI_TYPE_BUFFER &&
 		obj->buffer.length == sizeof(u32)) {
-		devices = *((u32 *) obj->buffer.pointer);
+		return *((u32 *) obj->buffer.pointer);
+	} else {
+		return 0;
 	}
-
-	kfree(out.pointer);
-	return devices;
 }
 
 /*
@@ -1327,31 +1327,22 @@ static int __init acer_wmi_init(void)
 		       "generic video driver\n");
 	}
 
-	err = platform_driver_register(&acer_platform_driver);
-	if (err) {
+	if (platform_driver_register(&acer_platform_driver)) {
 		printk(ACER_ERR "Unable to register platform driver.\n");
 		goto error_platform_register;
 	}
-
 	acer_platform_device = platform_device_alloc("acer-wmi", -1);
-	if (!acer_platform_device) {
-		err = -ENOMEM;
-		goto error_device_alloc;
-	}
-
-	err = platform_device_add(acer_platform_device);
-	if (err)
-		goto error_device_add;
+	platform_device_add(acer_platform_device);
 
 	err = create_sysfs();
 	if (err)
-		goto error_create_sys;
+		return err;
 
 	if (wmi_has_guid(WMID_GUID2)) {
 		interface->debug.wmid_devices = get_wmid_devices();
 		err = create_debugfs();
 		if (err)
-			goto error_create_debugfs;
+			return err;
 	}
 
 	/* Override any initial settings with values from the commandline */
@@ -1359,23 +1350,15 @@ static int __init acer_wmi_init(void)
 
 	return 0;
 
-error_create_debugfs:
-	remove_sysfs(acer_platform_device);
-error_create_sys:
-	platform_device_del(acer_platform_device);
-error_device_add:
-	platform_device_put(acer_platform_device);
-error_device_alloc:
-	platform_driver_unregister(&acer_platform_driver);
 error_platform_register:
-	return err;
+	return -ENODEV;
 }
 
 static void __exit acer_wmi_exit(void)
 {
 	remove_sysfs(acer_platform_device);
 	remove_debugfs();
-	platform_device_unregister(acer_platform_device);
+	platform_device_del(acer_platform_device);
 	platform_driver_unregister(&acer_platform_driver);
 
 	printk(ACER_INFO "Acer Laptop WMI Extras unloaded\n");

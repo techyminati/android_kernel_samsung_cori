@@ -521,19 +521,12 @@ config I2C_PXA_SLAVE
 	  is necessary for systems where the PXA may be a target on the
 	  I2C bus.
 
-config HAVE_S3C2410_I2C
-	bool
-	help
-	  This will include I2C support for Samsung SoCs. If you want to
-	  include I2C support for any machine, kindly select this in the
-	  respective Kconfig file.
-
 config I2C_S3C2410
 	tristate "S3C2410 I2C Driver"
-	depends on HAVE_S3C2410_I2C
+	depends on ARCH_S3C2410 || ARCH_S3C64XX
 	help
 	  Say Y here to include support for I2C controller in the
-	  Samsung SoCs.
+	  Samsung S3C2410 based System-on-Chip devices.
 
 config I2C_S6000
 	tristate "S6000 I2C support"
@@ -556,7 +549,7 @@ config I2C_SH7760
 
 config I2C_SH_MOBILE
 	tristate "SuperH Mobile I2C Controller"
-	depends on SUPERH || ARCH_SHMOBILE
+	depends on SUPERH
 	help
 	  If you say yes to this option, support will be included for the
 	  built-in I2C interface on the Renesas SH-Mobile processor.
@@ -619,6 +612,13 @@ config I2C_XILINX
 
 	  This driver can also be built as a module.  If so, the module
 	  will be called xilinx_i2c.
+
+config I2C_BCM1160
+    	tristate "BCM116X BCM215XX adapter"
+    	depends on (ARCH_BCM116X || ARCH_BCMRING || ARCH_BCM215XX) && I2C
+    	help
+        	Enable the i2c adapter on the BCM116X or BCMRING, which is used for
+        	Power Management.
 
 comment "External I2C/SMBus adapter drivers"
 

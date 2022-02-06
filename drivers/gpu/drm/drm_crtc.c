@@ -80,7 +80,6 @@ static struct drm_prop_enum_list drm_dithering_mode_enum_list[] =
 {
 	{ DRM_MODE_DITHERING_OFF, "Off" },
 	{ DRM_MODE_DITHERING_ON, "On" },
-	{ DRM_MODE_DITHERING_AUTO, "Automatic" },
 };
 
 /*
@@ -1127,7 +1126,7 @@ int drm_mode_getresources(struct drm_device *dev, void *data,
 		if (file_priv->master->minor->type == DRM_MINOR_CONTROL) {
 			list_for_each_entry(crtc, &dev->mode_config.crtc_list,
 					    head) {
-				DRM_DEBUG_KMS("[CRTC:%d]\n", crtc->base.id);
+				DRM_DEBUG_KMS("CRTC ID is %d\n", crtc->base.id);
 				if (put_user(crtc->base.id, crtc_id + copied)) {
 					ret = -EFAULT;
 					goto out;
@@ -1155,8 +1154,8 @@ int drm_mode_getresources(struct drm_device *dev, void *data,
 			list_for_each_entry(encoder,
 					    &dev->mode_config.encoder_list,
 					    head) {
-				DRM_DEBUG_KMS("[ENCODER:%d:%s]\n", encoder->base.id,
-						drm_get_encoder_name(encoder));
+				DRM_DEBUG_KMS("ENCODER ID is %d\n",
+					  encoder->base.id);
 				if (put_user(encoder->base.id, encoder_id +
 					     copied)) {
 					ret = -EFAULT;
@@ -1186,9 +1185,8 @@ int drm_mode_getresources(struct drm_device *dev, void *data,
 			list_for_each_entry(connector,
 					    &dev->mode_config.connector_list,
 					    head) {
-				DRM_DEBUG_KMS("[CONNECTOR:%d:%s]\n",
-					connector->base.id,
-					drm_get_connector_name(connector));
+				DRM_DEBUG_KMS("CONNECTOR ID is %d\n",
+					  connector->base.id);
 				if (put_user(connector->base.id,
 					     connector_id + copied)) {
 					ret = -EFAULT;
@@ -1211,7 +1209,7 @@ int drm_mode_getresources(struct drm_device *dev, void *data,
 	}
 	card_res->count_connectors = connector_count;
 
-	DRM_DEBUG_KMS("CRTC[%d] CONNECTORS[%d] ENCODERS[%d]\n", card_res->count_crtcs,
+	DRM_DEBUG_KMS("Counted %d %d %d\n", card_res->count_crtcs,
 		  card_res->count_connectors, card_res->count_encoders);
 
 out:
@@ -1314,7 +1312,7 @@ int drm_mode_getconnector(struct drm_device *dev, void *data,
 
 	memset(&u_mode, 0, sizeof(struct drm_mode_modeinfo));
 
-	DRM_DEBUG_KMS("[CONNECTOR:%d:?]\n", out_resp->connector_id);
+	DRM_DEBUG_KMS("connector id %d:\n", out_resp->connector_id);
 
 	mutex_lock(&dev->mode_config.mutex);
 
@@ -1495,7 +1493,6 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
 		goto out;
 	}
 	crtc = obj_to_crtc(obj);
-	DRM_DEBUG_KMS("[CRTC:%d]\n", crtc->base.id);
 
 	if (crtc_req->mode_valid) {
 		/* If we have a mode we need a framebuffer. */
@@ -1572,9 +1569,6 @@ int drm_mode_setcrtc(struct drm_device *dev, void *data,
 				goto out;
 			}
 			connector = obj_to_connector(obj);
-			DRM_DEBUG_KMS("[CONNECTOR:%d:%s]\n",
-					connector->base.id,
-					drm_get_connector_name(connector));
 
 			connector_set[i] = connector;
 		}
@@ -1682,15 +1676,14 @@ int drm_mode_addfb(struct drm_device *dev,
 	/* TODO setup destructor callback */
 
 	fb = dev->mode_config.funcs->fb_create(dev, file_priv, r);
-	if (IS_ERR(fb)) {
+	if (!fb) {
 		DRM_ERROR("could not create framebuffer\n");
-		ret = PTR_ERR(fb);
+		ret = -EINVAL;
 		goto out;
 	}
 
 	r->fb_id = fb->base.id;
 	list_add(&fb->filp_head, &file_priv->fbs);
-	DRM_DEBUG_KMS("[FB:%d]\n", fb->base.id);
 
 out:
 	mutex_unlock(&dev->mode_config.mutex);
@@ -2541,7 +2534,7 @@ int drm_mode_gamma_set_ioctl(struct drm_device *dev,
 		goto out;
 	}
 
-	crtc->funcs->gamma_set(crtc, r_base, g_base, b_base, 0, crtc->gamma_size);
+	crtc->funcs->gamma_set(crtc, r_base, g_base, b_base, crtc->gamma_size);
 
 out:
 	mutex_unlock(&dev->mode_config.mutex);
@@ -2616,15 +2609,6 @@ int drm_mode_page_flip_ioctl(struct drm_device *dev,
 	if (!obj)
 		goto out;
 	crtc = obj_to_crtc(obj);
-
-	if (crtc->fb == NULL) {
-		/* The framebuffer is currently unbound, presumably
-		 * due to a hotplug event, that userspace has not
-		 * yet discovered.
-		 */
-		ret = -EBUSY;
-		goto out;
-	}
 
 	if (crtc->funcs->page_flip == NULL)
 		goto out;

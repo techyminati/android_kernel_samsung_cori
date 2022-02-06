@@ -63,7 +63,6 @@ struct mpc_i2c {
 	wait_queue_head_t queue;
 	struct i2c_adapter adap;
 	int irq;
-	u32 real_clk;
 };
 
 struct mpc_i2c_divider {
@@ -97,23 +96,20 @@ static irqreturn_t mpc_i2c_isr(int irq, void *dev_id)
 /* Sometimes 9th clock pulse isn't generated, and slave doesn't release
  * the bus, because it wants to send ACK.
  * Following sequence of enabling/disabling and sending start/stop generates
- * the 9 pulses, so it's all OK.
+ * the pulse, so it's all OK.
  */
 static void mpc_i2c_fixup(struct mpc_i2c *i2c)
 {
-	int k;
-	u32 delay_val = 1000000 / i2c->real_clk + 1;
-
-	if (delay_val < 2)
-		delay_val = 2;
-
-	for (k = 9; k; k--) {
-		writeccr(i2c, 0);
-		writeccr(i2c, CCR_MSTA | CCR_MTX | CCR_MEN);
-		udelay(delay_val);
-		writeccr(i2c, CCR_MEN);
-		udelay(delay_val << 1);
-	}
+	writeccr(i2c, 0);
+	udelay(30);
+	writeccr(i2c, CCR_MEN);
+	udelay(30);
+	writeccr(i2c, CCR_MSTA | CCR_MTX);
+	udelay(30);
+	writeccr(i2c, CCR_MSTA | CCR_MTX | CCR_MEN);
+	udelay(30);
+	writeccr(i2c, CCR_MEN);
+	udelay(30);
 }
 
 static int i2c_wait(struct mpc_i2c *i2c, unsigned timeout, int writing)
@@ -194,18 +190,15 @@ static const struct mpc_i2c_divider mpc_i2c_dividers_52xx[] __devinitconst = {
 };
 
 static int __devinit mpc_i2c_get_fdr_52xx(struct device_node *node, u32 clock,
-					  int prescaler, u32 *real_clk)
+					  int prescaler)
 {
 	const struct mpc_i2c_divider *div = NULL;
 	unsigned int pvr = mfspr(SPRN_PVR);
 	u32 divider;
 	int i;
 
-	if (clock == MPC_I2C_CLOCK_LEGACY) {
-		/* see below - default fdr = 0x3f -> div = 2048 */
-		*real_clk = mpc5xxx_get_bus_frequency(node) / 2048;
+	if (clock == MPC_I2C_CLOCK_LEGACY)
 		return -EINVAL;
-	}
 
 	/* Determine divider value */
 	divider = mpc5xxx_get_bus_frequency(node) / clock;
@@ -223,8 +216,7 @@ static int __devinit mpc_i2c_get_fdr_52xx(struct device_node *node, u32 clock,
 			break;
 	}
 
-	*real_clk = mpc5xxx_get_bus_frequency(node) / div->divider;
-	return (int)div->fdr;
+	return div ? (int)div->fdr : -EINVAL;
 }
 
 static void __devinit mpc_i2c_setup_52xx(struct device_node *node,
@@ -239,14 +231,13 @@ static void __devinit mpc_i2c_setup_52xx(struct device_node *node,
 		return;
 	}
 
-	ret = mpc_i2c_get_fdr_52xx(node, clock, prescaler, &i2c->real_clk);
+	ret = mpc_i2c_get_fdr_52xx(node, clock, prescaler);
 	fdr = (ret >= 0) ? ret : 0x3f; /* backward compatibility */
 
 	writeb(fdr & 0xff, i2c->base + MPC_I2C_FDR);
 
 	if (ret >= 0)
-		dev_info(i2c->dev, "clock %u Hz (fdr=%d)\n", i2c->real_clk,
-			 fdr);
+		dev_info(i2c->dev, "clock %d Hz (fdr=%d)\n", clock, fdr);
 }
 #else /* !(CONFIG_PPC_MPC52xx || CONFIG_PPC_MPC512x) */
 static void __devinit mpc_i2c_setup_52xx(struct device_node *node,
@@ -343,17 +334,14 @@ static u32 __devinit mpc_i2c_get_sec_cfg_8xxx(void)
 }
 
 static int __devinit mpc_i2c_get_fdr_8xxx(struct device_node *node, u32 clock,
-					  u32 prescaler, u32 *real_clk)
+					  u32 prescaler)
 {
 	const struct mpc_i2c_divider *div = NULL;
 	u32 divider;
 	int i;
 
-	if (clock == MPC_I2C_CLOCK_LEGACY) {
-		/* see below - default fdr = 0x1031 -> div = 16 * 3072 */
-		*real_clk = fsl_get_sys_freq() / prescaler / (16 * 3072);
+	if (clock == MPC_I2C_CLOCK_LEGACY)
 		return -EINVAL;
-	}
 
 	/* Determine proper divider value */
 	if (of_device_is_compatible(node, "fsl,mpc8544-i2c"))
@@ -376,7 +364,6 @@ static int __devinit mpc_i2c_get_fdr_8xxx(struct device_node *node, u32 clock,
 			break;
 	}
 
-	*real_clk = fsl_get_sys_freq() / prescaler / div->divider;
 	return div ? (int)div->fdr : -EINVAL;
 }
 
@@ -393,7 +380,7 @@ static void __devinit mpc_i2c_setup_8xxx(struct device_node *node,
 		return;
 	}
 
-	ret = mpc_i2c_get_fdr_8xxx(node, clock, prescaler, &i2c->real_clk);
+	ret = mpc_i2c_get_fdr_8xxx(node, clock, prescaler);
 	fdr = (ret >= 0) ? ret : 0x1031; /* backward compatibility */
 
 	writeb(fdr & 0xff, i2c->base + MPC_I2C_FDR);
@@ -401,7 +388,7 @@ static void __devinit mpc_i2c_setup_8xxx(struct device_node *node,
 
 	if (ret >= 0)
 		dev_info(i2c->dev, "clock %d Hz (dfsrr=%d fdr=%d)\n",
-			 i2c->real_clk, fdr >> 8, fdr & 0xff);
+			 clock, fdr >> 8, fdr & 0xff);
 }
 
 #else /* !CONFIG_FSL_SOC */
@@ -513,14 +500,10 @@ static int mpc_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
 			return -EINTR;
 		}
 		if (time_after(jiffies, orig_jiffies + HZ)) {
-			u8 status = readb(i2c->base + MPC_I2C_SR);
-
 			dev_dbg(i2c->dev, "timeout\n");
-			if ((status & (CSR_MCF | CSR_MBB | CSR_RXAK)) != 0) {
-				writeb(status & ~CSR_MAL,
-				       i2c->base + MPC_I2C_SR);
+			if (readb(i2c->base + MPC_I2C_SR) ==
+			    (CSR_MCF | CSR_MBB | CSR_RXAK))
 				mpc_i2c_fixup(i2c);
-			}
 			return -EIO;
 		}
 		schedule();
@@ -560,7 +543,7 @@ static struct i2c_adapter mpc_ops = {
 	.timeout = HZ,
 };
 
-static int __devinit fsl_i2c_probe(struct platform_device *op,
+static int __devinit fsl_i2c_probe(struct of_device *op,
 				   const struct of_device_id *match)
 {
 	struct mpc_i2c *i2c;
@@ -612,26 +595,18 @@ static int __devinit fsl_i2c_probe(struct platform_device *op,
 			mpc_i2c_setup_8xxx(op->dev.of_node, i2c, clock, 0);
 	}
 
-	prop = of_get_property(op->dev.of_node, "fsl,timeout", &plen);
-	if (prop && plen == sizeof(u32)) {
-		mpc_ops.timeout = *prop * HZ / 1000000;
-		if (mpc_ops.timeout < 5)
-			mpc_ops.timeout = 5;
-	}
-	dev_info(i2c->dev, "timeout %u us\n", mpc_ops.timeout * 1000000 / HZ);
-
 	dev_set_drvdata(&op->dev, i2c);
 
 	i2c->adap = mpc_ops;
 	i2c_set_adapdata(&i2c->adap, i2c);
 	i2c->adap.dev.parent = &op->dev;
-	i2c->adap.dev.of_node = of_node_get(op->dev.of_node);
 
 	result = i2c_add_adapter(&i2c->adap);
 	if (result < 0) {
 		dev_err(i2c->dev, "failed to add adapter\n");
 		goto fail_add;
 	}
+	of_register_i2c_devices(&i2c->adap, op->dev.of_node);
 
 	return result;
 
@@ -646,7 +621,7 @@ static int __devinit fsl_i2c_probe(struct platform_device *op,
 	return result;
 };
 
-static int __devexit fsl_i2c_remove(struct platform_device *op)
+static int __devexit fsl_i2c_remove(struct of_device *op)
 {
 	struct mpc_i2c *i2c = dev_get_drvdata(&op->dev);
 

@@ -28,7 +28,6 @@
 #include <linux/swap.h>
 #include <linux/slab.h>
 #include "nilfs.h"
-#include "btnode.h"
 #include "segment.h"
 #include "page.h"
 #include "mdt.h"

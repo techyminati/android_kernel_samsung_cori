@@ -20,11 +20,9 @@
 
 #include <plat/gpio-cfg.h>
 #include <plat/regs-sdhci.h>
-#include <plat/sdhci.h>
 
 void s5pc100_setup_sdhci0_cfg_gpio(struct platform_device *dev, int width)
 {
-	struct s3c_sdhci_platdata *pdata = dev->dev.platform_data;
 	unsigned int gpio;
 	unsigned int end;
 	unsigned int num;
@@ -49,15 +47,12 @@ void s5pc100_setup_sdhci0_cfg_gpio(struct platform_device *dev, int width)
 		}
 	}
 
-	if (pdata->cd_type == S3C_SDHCI_CD_INTERNAL) {
-		s3c_gpio_setpull(S5PC100_GPG1(2), S3C_GPIO_PULL_UP);
-		s3c_gpio_cfgpin(S5PC100_GPG1(2), S3C_GPIO_SFN(2));
-	}
+	s3c_gpio_setpull(S5PC100_GPG1(2), S3C_GPIO_PULL_UP);
+	s3c_gpio_cfgpin(S5PC100_GPG1(2), S3C_GPIO_SFN(2));
 }
 
 void s5pc100_setup_sdhci1_cfg_gpio(struct platform_device *dev, int width)
 {
-	struct s3c_sdhci_platdata *pdata = dev->dev.platform_data;
 	unsigned int gpio;
 	unsigned int end;
 
@@ -69,15 +64,12 @@ void s5pc100_setup_sdhci1_cfg_gpio(struct platform_device *dev, int width)
 		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
 	}
 
-	if (pdata->cd_type == S3C_SDHCI_CD_INTERNAL) {
-		s3c_gpio_setpull(S5PC100_GPG2(6), S3C_GPIO_PULL_UP);
-		s3c_gpio_cfgpin(S5PC100_GPG2(6), S3C_GPIO_SFN(2));
-	}
+	s3c_gpio_setpull(S5PC100_GPG2(6), S3C_GPIO_PULL_UP);
+	s3c_gpio_cfgpin(S5PC100_GPG2(6), S3C_GPIO_SFN(2));
 }
 
 void s5pc100_setup_sdhci2_cfg_gpio(struct platform_device *dev, int width)
 {
-	struct s3c_sdhci_platdata *pdata = dev->dev.platform_data;
 	unsigned int gpio;
 	unsigned int end;
 
@@ -89,8 +81,6 @@ void s5pc100_setup_sdhci2_cfg_gpio(struct platform_device *dev, int width)
 		s3c_gpio_setpull(gpio, S3C_GPIO_PULL_NONE);
 	}
 
-	if (pdata->cd_type == S3C_SDHCI_CD_INTERNAL) {
-		s3c_gpio_setpull(S5PC100_GPG3(6), S3C_GPIO_PULL_UP);
-		s3c_gpio_cfgpin(S5PC100_GPG3(6), S3C_GPIO_SFN(2));
-	}
+	s3c_gpio_setpull(S5PC100_GPG3(6), S3C_GPIO_PULL_UP);
+	s3c_gpio_cfgpin(S5PC100_GPG3(6), S3C_GPIO_SFN(2));
 }

@@ -714,7 +714,6 @@ config USB_GADGETFS
 config USB_FUNCTIONFS
 	tristate "Function Filesystem (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
-	select USB_FUNCTIONFS_GENERIC if !(USB_FUNCTIONFS_ETH || USB_FUNCTIONFS_RNDIS)
 	help
 	  The Function Filesystem (FunctioFS) lets one create USB
 	  composite functions in user space in the same way as GadgetFS
@@ -723,31 +722,31 @@ config USB_FUNCTIONFS
 	  implemented in kernel space (for instance Ethernet, serial or
 	  mass storage) and other are implemented in user space.
 
-	  If you say "y" or "m" here you will be able what kind of
-	  configurations the gadget will provide.
-
 	  Say "y" to link the driver statically, or "m" to build
 	  a dynamically linked module called "g_ffs".
 
 config USB_FUNCTIONFS_ETH
-	bool "Include configuration with CDC ECM (Ethernet)"
+	bool "Include CDC ECM (Ethernet) function"
 	depends on USB_FUNCTIONFS && NET
 	help
-	  Include a configuration with CDC ECM funcion (Ethernet) and the
-	  Funcion Filesystem.
+	  Include an CDC ECM (Ethernet) funcion in the CDC ECM (Funcion)
+	  Filesystem.  If you also say "y" to the RNDIS query below the
+	  gadget will have two configurations.
 
 config USB_FUNCTIONFS_RNDIS
-	bool "Include configuration with RNDIS (Ethernet)"
+	bool "Include RNDIS (Ethernet) function"
 	depends on USB_FUNCTIONFS && NET
 	help
-	  Include a configuration with RNDIS funcion (Ethernet) and the Filesystem.
+	  Include an RNDIS (Ethernet) funcion in the Funcion Filesystem.
+	  If you also say "y" to the CDC ECM query above the gadget will
+	  have two configurations.
 
 config USB_FUNCTIONFS_GENERIC
 	bool "Include 'pure' configuration"
-	depends on USB_FUNCTIONFS
+	depends on USB_FUNCTIONFS && (USB_FUNCTIONFS_ETH || USB_FUNCTIONFS_RNDIS)
 	help
-	  Include a configuration with the Function Filesystem alone with
-	  no Ethernet interface.
+	  Include a configuration with FunctionFS and no Ethernet
+	  configuration.
 
 config USB_FILE_STORAGE
 	tristate "File-backed Storage Gadget"
@@ -837,6 +836,54 @@ config USB_G_PRINTER
 	  For more information, see Documentation/usb/gadget_printer.txt
 	  which includes sample code for accessing the device file.
 
+config USB_ANDROID
+	boolean "Android Gadget"
+	depends on SWITCH
+	help
+	  The Android gadget driver supports multiple USB functions.
+	  The functions can be configured via a board file and may be
+	  enabled and disabled dynamically.
+
+config USB_ANDROID_ACM
+	boolean "Android gadget ACM serial function"
+	depends on USB_ANDROID
+	help
+	  Provides ACM serial function for android gadget driver.
+
+config USB_ANDROID_ADB
+	boolean "Android gadget adb function"
+	depends on USB_ANDROID
+	help
+	  Provides adb function for android gadget driver.
+
+config USB_ANDROID_MASS_STORAGE
+	boolean "Android gadget mass storage function"
+	depends on USB_ANDROID && SWITCH
+	help
+	  Provides USB mass storage function for android gadget driver.
+
+config USB_ANDROID_MTP
+	boolean "Android MTP function"
+	depends on USB_ANDROID
+	help
+	  Provides Media Transfer Protocol (MTP) support for android gadget driver.
+
+config USB_ANDROID_RNDIS
+	boolean "Android gadget RNDIS ethernet function"
+	depends on USB_ANDROID
+	help
+	  Provides RNDIS ethernet function for android gadget driver.
+
+config USB_ANDROID_RNDIS_WCEIS
+        boolean "Use Windows Internet Sharing Class/SubClass/Protocol"
+        depends on USB_ANDROID_RNDIS
+        help
+         Causes the driver to look like a Windows-compatible Internet
+         Sharing device, so Windows auto-detects it.
+
+         If you enable this option, the device is no longer CDC ethernet
+         compatible.
+
 config USB_CDC_COMPOSITE
 	tristate "CDC Composite Device (Ethernet and ACM)"
 	depends on NET
@@ -864,7 +911,6 @@ config USB_G_NOKIA
 config USB_G_MULTI
 	tristate "Multifunction Composite Gadget (EXPERIMENTAL)"
 	depends on BLOCK && NET
-	select USB_G_MULTI_CDC if !USB_G_MULTI_RNDIS
 	help
 	  The Multifunction Composite Gadget provides Ethernet (RNDIS
 	  and/or CDC Ethernet), mass storage and ACM serial link
@@ -914,34 +960,6 @@ config USB_G_HID
 
 	  Say "y" to link the driver statically, or "m" to build a
 	  dynamically linked module called "g_hid".
-
-config USB_G_DBGP
-	tristate "EHCI Debug Device Gadget"
-	help
-	  This gadget emulates an EHCI Debug device. This is useful when you want
-	  to interact with an EHCI Debug Port.
-
-	  Say "y" to link the driver statically, or "m" to build a
-	  dynamically linked module called "g_dbgp".
-
-if USB_G_DBGP
-choice
-	prompt "EHCI Debug Device mode"
-	default USB_G_DBGP_SERIAL
-
-config USB_G_DBGP_PRINTK
-	depends on USB_G_DBGP
-	bool "printk"
-	help
-	  Directly printk() received data. No interaction.
-
-config USB_G_DBGP_SERIAL
-	depends on USB_G_DBGP
-	bool "serial"
-	help
-	  Userland can interact using /dev/ttyGSxxx.
-endchoice
-endif
 
 # put drivers that need isochronous transfer support (for audio
 # or video class gadget drivers), or specific hardware, here.

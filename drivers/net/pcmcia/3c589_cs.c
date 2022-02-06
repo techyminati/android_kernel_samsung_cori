@@ -41,6 +41,7 @@
 #include <linux/bitops.h>
 #include <linux/jiffies.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/cisreg.h>
@@ -213,8 +214,8 @@ static int tc589_probe(struct pcmcia_device *link)
     lp->p_dev = link;
 
     spin_lock_init(&lp->lock);
-    link->resource[0]->end = 16;
-    link->resource[0]->flags |= IO_DATA_PATH_WIDTH_16;
+    link->io.NumPorts1 = 16;
+    link->io.Attributes1 = IO_DATA_PATH_WIDTH_16;
 
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.IntType = INT_MEMORY_AND_IO;
@@ -277,13 +278,12 @@ static int tc589_config(struct pcmcia_device *link)
 		   "3Com card??\n");
     multi = (link->card_id == PRODID_3COM_3C562);
 
-    link->io_lines = 16;
-
     /* For the 3c562, the base address must be xx00-xx7f */
+    link->io.IOAddrLines = 16;
     for (i = j = 0; j < 0x400; j += 0x10) {
 	if (multi && (j & 0x80)) continue;
-	link->resource[0]->start = j ^ 0x300;
-	i = pcmcia_request_io(link);
+	link->io.BasePort1 = j ^ 0x300;
+	i = pcmcia_request_io(link, &link->io);
 	if (i == 0)
 		break;
     }
@@ -299,7 +299,7 @@ static int tc589_config(struct pcmcia_device *link)
 	    goto failed;
 
     dev->irq = link->irq;
-    dev->base_addr = link->resource[0]->start;
+    dev->base_addr = link->io.BasePort1;
     ioaddr = dev->base_addr;
     EL3WINDOW(0);
 

@@ -82,6 +82,10 @@ config GENERIC_CALIBRATE_DELAY
 	bool
 	default y
 
+config GENERIC_TIME
+	bool
+	default y
+
 config GENERIC_TIME_VSYSCALL
 	bool
 	default y
@@ -499,7 +503,8 @@ config USE_PERCPU_NUMA_NODE_ID
 	depends on NUMA
 
 config HAVE_MEMORYLESS_NODES
-	def_bool NUMA
+	def_bool y
+	depends on NUMA
 
 config ARCH_PROC_KCORE_TEXT
 	def_bool y

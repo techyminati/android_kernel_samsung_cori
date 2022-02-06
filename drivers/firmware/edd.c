@@ -744,7 +744,7 @@ static inline int edd_num_devices(void)
 static int __init
 edd_init(void)
 {
-	int i;
+	unsigned int i;
 	int rc=0;
 	struct edd_device *edev;
 
@@ -760,27 +760,21 @@ edd_init(void)
 	if (!edd_kset)
 		return -ENOMEM;
 
-	for (i = 0; i < edd_num_devices(); i++) {
+	for (i = 0; i < edd_num_devices() && !rc; i++) {
 		edev = kzalloc(sizeof (*edev), GFP_KERNEL);
-		if (!edev) {
-			rc = -ENOMEM;
-			goto out;
-		}
+		if (!edev)
+			return -ENOMEM;
 
 		rc = edd_device_register(edev, i);
 		if (rc) {
 			kfree(edev);
-			goto out;
+			break;
 		}
 		edd_devices[i] = edev;
 	}
 
-	return 0;
-
-out:
-	while (--i >= 0)
-		edd_device_unregister(edd_devices[i]);
-	kset_unregister(edd_kset);
+	if (rc)
+		kset_unregister(edd_kset);
 	return rc;
 }
 

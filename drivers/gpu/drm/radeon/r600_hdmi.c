@@ -435,8 +435,7 @@ static int r600_hdmi_find_free_block(struct drm_device *dev)
 		}
 	}
 
-	if (rdev->family == CHIP_RS600 || rdev->family == CHIP_RS690 ||
-	    rdev->family == CHIP_RS740) {
+	if (rdev->family == CHIP_RS600 || rdev->family == CHIP_RS690) {
 		return free_blocks[0] ? R600_HDMI_BLOCK1 : 0;
 	} else if (rdev->family >= CHIP_R600) {
 		if (free_blocks[0])
@@ -467,8 +466,7 @@ static void r600_hdmi_assign_block(struct drm_encoder *encoder)
 		if (ASIC_IS_DCE32(rdev))
 			radeon_encoder->hdmi_config_offset = dig->dig_encoder ?
 				R600_HDMI_CONFIG2 : R600_HDMI_CONFIG1;
-	} else if (rdev->family >= CHIP_R600 || rdev->family == CHIP_RS600 ||
-		   rdev->family == CHIP_RS690 || rdev->family == CHIP_RS740) {
+	} else if (rdev->family >= CHIP_R600) {
 		radeon_encoder->hdmi_offset = r600_hdmi_find_free_block(dev);
 	}
 }

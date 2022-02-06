@@ -1505,7 +1505,7 @@ config FB_SIS_315
 
 config FB_VIA
        tristate "VIA UniChrome (Pro) and Chrome9 display support"
-       depends on FB && PCI && X86
+       depends on FB && PCI
        select FB_CFB_FILLRECT
        select FB_CFB_COPYAREA
        select FB_CFB_IMAGEBLIT
@@ -1871,7 +1871,6 @@ config FB_MBX_DEBUG
 config FB_FSL_DIU
 	tristate "Freescale DIU framebuffer support"
 	depends on FB && FSL_SOC
-	select FB_MODE_HELPERS
 	select FB_CFB_FILLRECT
 	select FB_CFB_COPYAREA
 	select FB_CFB_IMAGEBLIT
@@ -1896,13 +1895,6 @@ config FB_W100
 
 	  If unsure, say N.
 
-config SH_MIPI_DSI
-	tristate
-	depends on (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
-
-config SH_LCD_MIPI_DSI
-	bool
-
 config FB_SH_MOBILE_LCDC
 	tristate "SuperH Mobile LCDC framebuffer support"
 	depends on FB && (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
@@ -1911,16 +1903,8 @@ config FB_SH_MOBILE_LCDC
 	select FB_SYS_IMAGEBLIT
 	select FB_SYS_FOPS
 	select FB_DEFERRED_IO
-	select SH_MIPI_DSI if SH_LCD_MIPI_DSI
 	---help---
 	  Frame buffer driver for the on-chip SH-Mobile LCD controller.
-
-config FB_SH_MOBILE_HDMI
-	tristate "SuperH Mobile HDMI controller support"
-	depends on FB_SH_MOBILE_LCDC
-	select FB_MODE_HELPERS
-	---help---
-	  Driver for the on-chip SH-Mobile HDMI controller.
 
 config FB_TMIO
 	tristate "Toshiba Mobile IO FrameBuffer support"
@@ -1946,7 +1930,7 @@ config FB_TMIO_ACCELL
 
 config FB_S3C
 	tristate "Samsung S3C framebuffer support"
-	depends on FB && S3C_DEV_FB
+	depends on FB && ARCH_S3C64XX
 	select FB_CFB_FILLRECT
 	select FB_CFB_COPYAREA
 	select FB_CFB_IMAGEBLIT
@@ -2086,6 +2070,14 @@ config FB_XILINX
 	  Include support for the Xilinx ML300/ML403 reference design
 	  framebuffer. ML300 carries a 640*480 LCD display on the board,
 	  ML403 uses a standard DB15 VGA connector.
+
+config FB_BCM
+        tristate "BCM platform framebuffer support"
+        depends on FB && (ARCH_BCM116X || ARCH_BCM215XX)
+        select FB_CFB_FILLRECT
+        select FB_CFB_COPYAREA
+        select FB_CFB_IMAGEBLIT
+        default y
 
 config FB_COBALT
 	tristate "Cobalt server LCD frame buffer support"
@@ -2245,15 +2237,6 @@ config FB_BROADSHEET
 	  and could also have been called by other names when coupled with
 	  a bridge adapter.
 
-config FB_JZ4740
-	tristate "JZ4740 LCD framebuffer support"
-	depends on FB && MACH_JZ4740
-	select FB_SYS_FILLRECT
-	select FB_SYS_COPYAREA
-	select FB_SYS_IMAGEBLIT
-	help
-	  Framebuffer support for the JZ4740 SoC.
-
 source "drivers/video/omap/Kconfig"
 source "drivers/video/omap2/Kconfig"
 
@@ -2266,6 +2249,10 @@ endif
 
 if FB || SGI_NEWPORT_CONSOLE
 	source "drivers/video/logo/Kconfig"
+endif
+
+if FB_BCM
+	source "drivers/video/broadcom/Kconfig"
 endif
 
 endmenu

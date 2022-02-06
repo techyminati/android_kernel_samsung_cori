@@ -722,12 +722,7 @@ root_found:
 	}
 
 	s->s_magic = ISOFS_SUPER_MAGIC;
-
-	/*
-	 * With multi-extent files, file size is only limited by the maximum
-	 * size of a file system, which is 8 TB.
-	 */
-	s->s_maxbytes = 0x80000000000LL;
+	s->s_maxbytes = 0xffffffff; /* We can handle files up to 4 GB */
 
 	/*
 	 * The CDROM is read-only, has no nodes (devices) on it, and since

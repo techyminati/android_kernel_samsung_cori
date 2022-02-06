@@ -621,6 +621,7 @@ int cpm1_gpiochip_add16(struct device_node *np)
 {
 	struct cpm1_gpio16_chip *cpm1_gc;
 	struct of_mm_gpio_chip *mm_gc;
+	struct of_gpio_chip *of_gc;
 	struct gpio_chip *gc;
 
 	cpm1_gc = kzalloc(sizeof(*cpm1_gc), GFP_KERNEL);
@@ -630,9 +631,11 @@ int cpm1_gpiochip_add16(struct device_node *np)
 	spin_lock_init(&cpm1_gc->lock);
 
 	mm_gc = &cpm1_gc->mm_gc;
-	gc = &mm_gc->gc;
+	of_gc = &mm_gc->of_gc;
+	gc = &of_gc->gc;
 
 	mm_gc->save_regs = cpm1_gpio16_save_regs;
+	of_gc->gpio_cells = 2;
 	gc->ngpio = 16;
 	gc->direction_input = cpm1_gpio16_dir_in;
 	gc->direction_output = cpm1_gpio16_dir_out;
@@ -742,6 +745,7 @@ int cpm1_gpiochip_add32(struct device_node *np)
 {
 	struct cpm1_gpio32_chip *cpm1_gc;
 	struct of_mm_gpio_chip *mm_gc;
+	struct of_gpio_chip *of_gc;
 	struct gpio_chip *gc;
 
 	cpm1_gc = kzalloc(sizeof(*cpm1_gc), GFP_KERNEL);
@@ -751,9 +755,11 @@ int cpm1_gpiochip_add32(struct device_node *np)
 	spin_lock_init(&cpm1_gc->lock);
 
 	mm_gc = &cpm1_gc->mm_gc;
-	gc = &mm_gc->gc;
+	of_gc = &mm_gc->of_gc;
+	gc = &of_gc->gc;
 
 	mm_gc->save_regs = cpm1_gpio32_save_regs;
+	of_gc->gpio_cells = 2;
 	gc->ngpio = 32;
 	gc->direction_input = cpm1_gpio32_dir_in;
 	gc->direction_output = cpm1_gpio32_dir_out;

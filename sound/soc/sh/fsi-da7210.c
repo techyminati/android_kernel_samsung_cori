@@ -10,7 +10,16 @@
  *  option) any later version.
  */
 
+#include <linux/interrupt.h>
 #include <linux/platform_device.h>
+#include <linux/io.h>
+#include <linux/i2c.h>
+#include <sound/core.h>
+#include <sound/pcm.h>
+#include <sound/pcm_params.h>
+#include <sound/soc.h>
+#include <sound/soc-dapm.h>
+
 #include <sound/sh_fsi.h>
 #include "../codecs/da7210.h"
 
@@ -24,7 +33,7 @@ static int fsi_da7210_init(struct snd_soc_codec *codec)
 static struct snd_soc_dai_link fsi_da7210_dai = {
 	.name		= "DA7210",
 	.stream_name	= "DA7210",
-	.cpu_dai	= &fsi_soc_dai[FSI_PORT_B],
+	.cpu_dai	= &fsi_soc_dai[1], /* FSI B */
 	.codec_dai	= &da7210_dai,
 	.init		= fsi_da7210_init,
 };
@@ -47,7 +56,7 @@ static int __init fsi_da7210_sound_init(void)
 {
 	int ret;
 
-	fsi_da7210_snd_device = platform_device_alloc("soc-audio", FSI_PORT_B);
+	fsi_da7210_snd_device = platform_device_alloc("soc-audio", -1);
 	if (!fsi_da7210_snd_device)
 		return -ENOMEM;
 

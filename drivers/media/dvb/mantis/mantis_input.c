@@ -19,7 +19,7 @@
 */
 
 #include <linux/input.h>
-#include <media/ir-core.h>
+#include <media/ir-common.h>
 #include <linux/pci.h>
 
 #include "dmxdev.h"
@@ -104,6 +104,7 @@ EXPORT_SYMBOL_GPL(ir_mantis);
 int mantis_input_init(struct mantis_pci *mantis)
 {
 	struct input_dev *rc;
+	struct ir_input_state rc_state;
 	char name[80], dev[80];
 	int err;
 
@@ -118,6 +119,8 @@ int mantis_input_init(struct mantis_pci *mantis)
 
 	rc->name = name;
 	rc->phys = dev;
+
+	ir_input_init(rc, &rc_state, IR_TYPE_OTHER);
 
 	rc->id.bustype	= BUS_PCI;
 	rc->id.vendor	= mantis->vendor_id;

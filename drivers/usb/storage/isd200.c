@@ -1456,7 +1456,8 @@ static int isd200_init_info(struct us_data *us)
 	int retStatus = ISD200_GOOD;
 	struct isd200_info *info;
 
-	info = kzalloc(sizeof(struct isd200_info), GFP_KERNEL);
+	info = (struct isd200_info *)
+			kzalloc(sizeof(struct isd200_info), GFP_KERNEL);
 	if (!info)
 		retStatus = ISD200_ERROR;
 	else {

@@ -54,7 +54,7 @@ struct sd {
 #define MegapixV4 4
 #define MegaImageVI 5
 
-	u8 jpeg_hdr[JPEG_HDR_SZ];
+	u8 *jpeg_hdr;
 };
 
 /* V4L2 controls supported by the driver */
@@ -805,7 +805,7 @@ static int sd_init(struct gspca_dev *gspca_dev)
 			/* Set AE AWB Banding Type 3-> 50Hz 2-> 60Hz */
 			spca504A_acknowledged_command(gspca_dev, 0x24,
 							8, 3, 0x9e, 1);
-			/* Twice sequential need status 0xff->0x9e->0x9d */
+			/* Twice sequencial need status 0xff->0x9e->0x9d */
 			spca504A_acknowledged_command(gspca_dev, 0x24,
 							8, 3, 0x9e, 0);
 
@@ -842,6 +842,9 @@ static int sd_start(struct gspca_dev *gspca_dev)
 	int enable;
 
 	/* create the JPEG header */
+	sd->jpeg_hdr = kmalloc(JPEG_HDR_SZ, GFP_KERNEL);
+	if (!sd->jpeg_hdr)
+		return -ENOMEM;
 	jpeg_define(sd->jpeg_hdr, gspca_dev->height, gspca_dev->width,
 			0x22);		/* JPEG 411 */
 	jpeg_set_qual(sd->jpeg_hdr, sd->quality);
@@ -877,7 +880,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
 			/* Set AE AWB Banding Type 3-> 50Hz 2-> 60Hz */
 			spca504A_acknowledged_command(gspca_dev, 0x24,
 							8, 3, 0x9e, 1);
-			/* Twice sequential need status 0xff->0x9e->0x9d */
+			/* Twice sequencial need status 0xff->0x9e->0x9d */
 			spca504A_acknowledged_command(gspca_dev, 0x24,
 							8, 3, 0x9e, 0);
 			spca504A_acknowledged_command(gspca_dev, 0x24,
@@ -949,6 +952,13 @@ static void sd_stopN(struct gspca_dev *gspca_dev)
 		}
 		break;
 	}
+}
+
+static void sd_stop0(struct gspca_dev *gspca_dev)
+{
+	struct sd *sd = (struct sd *) gspca_dev;
+
+	kfree(sd->jpeg_hdr);
 }
 
 static void sd_pkt_scan(struct gspca_dev *gspca_dev,
@@ -1152,6 +1162,7 @@ static const struct sd_desc sd_desc = {
 	.init = sd_init,
 	.start = sd_start,
 	.stopN = sd_stopN,
+	.stop0 = sd_stop0,
 	.pkt_scan = sd_pkt_scan,
 	.get_jcomp = sd_get_jcomp,
 	.set_jcomp = sd_set_jcomp,

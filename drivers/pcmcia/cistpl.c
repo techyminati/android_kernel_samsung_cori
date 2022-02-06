@@ -27,6 +27,7 @@
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/ss.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cisreg.h>
@@ -52,9 +53,6 @@ static const u_int exponent[] = {
 
 /* Upper limit on reasonable # of tuples */
 #define MAX_TUPLES		200
-
-/* Bits in IRQInfo1 field */
-#define IRQ_INFO2_VALID		0x10
 
 /* 16-bit CIS? */
 static int cis_width;
@@ -212,7 +210,7 @@ int pcmcia_read_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
  * Probably only useful for writing one-byte registers. Must be called
  * with ops_mutex held.
  */
-int pcmcia_write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
+void pcmcia_write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 		   u_int len, void *ptr)
 {
 	void __iomem *sys, *end;
@@ -234,7 +232,7 @@ int pcmcia_write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 				((cis_width) ? MAP_16BIT : 0));
 		if (!sys) {
 			dev_dbg(&s->dev, "could not map memory\n");
-			return -EINVAL;
+			return; /* FIXME: Error */
 		}
 
 		writeb(flags, sys+CISREG_ICTRL0);
@@ -259,7 +257,7 @@ int pcmcia_write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 			sys = set_cis_map(s, card_offset, flags);
 			if (!sys) {
 				dev_dbg(&s->dev, "could not map memory\n");
-				return -EINVAL;
+				return; /* FIXME: error */
 			}
 
 			end = sys + s->map_size;
@@ -273,7 +271,6 @@ int pcmcia_write_cis_mem(struct pcmcia_socket *s, int attr, u_int addr,
 			addr = 0;
 		}
 	}
-	return 0;
 }
 
 

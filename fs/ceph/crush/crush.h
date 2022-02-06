@@ -1,5 +1,5 @@
-#ifndef CEPH_CRUSH_CRUSH_H
-#define CEPH_CRUSH_CRUSH_H
+#ifndef _CRUSH_CRUSH_H
+#define _CRUSH_CRUSH_H
 
 #include <linux/types.h>
 

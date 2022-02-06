@@ -172,7 +172,7 @@ struct usbip_header_basic {
 #define USBIP_RET_UNLINK	0x0004
 	__u32 command;
 
-	 /* sequential number which identifies requests.
+	 /* sequencial number which identifies requests.
 	  * incremented per connections */
 	__u32 seqnum;
 

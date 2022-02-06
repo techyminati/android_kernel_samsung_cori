@@ -271,7 +271,8 @@ int minix_add_link(struct dentry *dentry, struct inode *inode)
 
 got_it:
 	pos = page_offset(page) + p - (char *)page_address(page);
-	err = minix_prepare_chunk(page, pos, sbi->s_dirsize);
+	err = __minix_write_begin(NULL, page->mapping, pos, sbi->s_dirsize,
+					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
 	if (err)
 		goto out_unlock;
 	memcpy (namx, name, namelen);
@@ -296,7 +297,8 @@ out_unlock:
 
 int minix_delete_entry(struct minix_dir_entry *de, struct page *page)
 {
-	struct inode *inode = page->mapping->host;
+	struct address_space *mapping = page->mapping;
+	struct inode *inode = (struct inode*)mapping->host;
 	char *kaddr = page_address(page);
 	loff_t pos = page_offset(page) + (char*)de - kaddr;
 	struct minix_sb_info *sbi = minix_sb(inode->i_sb);
@@ -304,7 +306,8 @@ int minix_delete_entry(struct minix_dir_entry *de, struct page *page)
 	int err;
 
 	lock_page(page);
-	err = minix_prepare_chunk(page, pos, len);
+	err = __minix_write_begin(NULL, mapping, pos, len,
+					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
 	if (err == 0) {
 		if (sbi->s_version == MINIX_V3)
 			((minix3_dirent *) de)->inode = 0;
@@ -322,14 +325,16 @@ int minix_delete_entry(struct minix_dir_entry *de, struct page *page)
 
 int minix_make_empty(struct inode *inode, struct inode *dir)
 {
-	struct page *page = grab_cache_page(inode->i_mapping, 0);
+	struct address_space *mapping = inode->i_mapping;
+	struct page *page = grab_cache_page(mapping, 0);
 	struct minix_sb_info *sbi = minix_sb(inode->i_sb);
 	char *kaddr;
 	int err;
 
 	if (!page)
 		return -ENOMEM;
-	err = minix_prepare_chunk(page, 0, 2 * sbi->s_dirsize);
+	err = __minix_write_begin(NULL, mapping, 0, 2 * sbi->s_dirsize,
+					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
 	if (err) {
 		unlock_page(page);
 		goto fail;
@@ -420,7 +425,8 @@ not_empty:
 void minix_set_link(struct minix_dir_entry *de, struct page *page,
 	struct inode *inode)
 {
-	struct inode *dir = page->mapping->host;
+	struct address_space *mapping = page->mapping;
+	struct inode *dir = mapping->host;
 	struct minix_sb_info *sbi = minix_sb(dir->i_sb);
 	loff_t pos = page_offset(page) +
 			(char *)de-(char*)page_address(page);
@@ -428,7 +434,8 @@ void minix_set_link(struct minix_dir_entry *de, struct page *page,
 
 	lock_page(page);
 
-	err = minix_prepare_chunk(page, pos, sbi->s_dirsize);
+	err = __minix_write_begin(NULL, mapping, pos, sbi->s_dirsize,
+					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
 	if (err == 0) {
 		if (sbi->s_version == MINIX_V3)
 			((minix3_dirent *) de)->inode = inode->i_ino;

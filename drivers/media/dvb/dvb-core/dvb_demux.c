@@ -1130,9 +1130,13 @@ static int dvbdmx_write(struct dmx_demux *demux, const char __user *buf, size_t 
 	if ((!demux->frontend) || (demux->frontend->source != DMX_MEMORY_FE))
 		return -EINVAL;
 
-	p = memdup_user(buf, count);
-	if (IS_ERR(p))
-		return PTR_ERR(p);
+	p = kmalloc(count, GFP_USER);
+	if (!p)
+		return -ENOMEM;
+	if (copy_from_user(p, buf, count)) {
+		kfree(p);
+		return -EFAULT;
+	}
 	if (mutex_lock_interruptible(&dvbdemux->mutex)) {
 		kfree(p);
 		return -ERESTARTSYS;

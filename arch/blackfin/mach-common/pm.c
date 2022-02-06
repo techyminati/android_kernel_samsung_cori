@@ -61,11 +61,10 @@ void bfin_pm_suspend_standby_enter(void)
 
 int bf53x_suspend_l1_mem(unsigned char *memptr)
 {
-	dma_memcpy_nocache(memptr, (const void *) L1_CODE_START,
-			L1_CODE_LENGTH);
-	dma_memcpy_nocache(memptr + L1_CODE_LENGTH,
-			(const void *) L1_DATA_A_START, L1_DATA_A_LENGTH);
-	dma_memcpy_nocache(memptr + L1_CODE_LENGTH + L1_DATA_A_LENGTH,
+	dma_memcpy(memptr, (const void *) L1_CODE_START, L1_CODE_LENGTH);
+	dma_memcpy(memptr + L1_CODE_LENGTH, (const void *) L1_DATA_A_START,
+			L1_DATA_A_LENGTH);
+	dma_memcpy(memptr + L1_CODE_LENGTH + L1_DATA_A_LENGTH,
 			(const void *) L1_DATA_B_START, L1_DATA_B_LENGTH);
 	memcpy(memptr + L1_CODE_LENGTH + L1_DATA_A_LENGTH +
 			L1_DATA_B_LENGTH, (const void *) L1_SCRATCH_START,
@@ -76,10 +75,10 @@ int bf53x_suspend_l1_mem(unsigned char *memptr)
 
 int bf53x_resume_l1_mem(unsigned char *memptr)
 {
-	dma_memcpy_nocache((void *) L1_CODE_START, memptr, L1_CODE_LENGTH);
-	dma_memcpy_nocache((void *) L1_DATA_A_START, memptr + L1_CODE_LENGTH,
+	dma_memcpy((void *) L1_CODE_START, memptr, L1_CODE_LENGTH);
+	dma_memcpy((void *) L1_DATA_A_START, memptr + L1_CODE_LENGTH,
 			L1_DATA_A_LENGTH);
-	dma_memcpy_nocache((void *) L1_DATA_B_START, memptr + L1_CODE_LENGTH +
+	dma_memcpy((void *) L1_DATA_B_START, memptr + L1_CODE_LENGTH +
 			L1_DATA_A_LENGTH, L1_DATA_B_LENGTH);
 	memcpy((void *) L1_SCRATCH_START, memptr + L1_CODE_LENGTH +
 			L1_DATA_A_LENGTH + L1_DATA_B_LENGTH, L1_SCRATCH_LENGTH);
@@ -168,7 +167,7 @@ int bfin_pm_suspend_mem_enter(void)
 	_disable_icplb();
 	bf53x_suspend_l1_mem(memptr);
 
-	do_hibernate(wakeup | vr_wakeup);	/* See you later! */
+	do_hibernate(wakeup | vr_wakeup);	/* Goodbye */
 
 	bf53x_resume_l1_mem(memptr);
 

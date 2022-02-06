@@ -380,7 +380,7 @@ out_driver:
 
 static void __exit mon_exit(void)
 {
-	misc_deregister(&mon_dev);
+	WARN_ON(misc_deregister(&mon_dev) != 0);
 	platform_device_unregister(monwriter_pdev);
 	platform_driver_unregister(&monwriter_pdrv);
 }

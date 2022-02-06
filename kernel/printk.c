@@ -37,8 +37,6 @@
 #include <linux/ratelimit.h>
 #include <linux/kmsg_dump.h>
 #include <linux/syslog.h>
-#include <linux/cpu.h>
-#include <linux/notifier.h>
 
 #include <asm/uaccess.h>
 
@@ -56,6 +54,10 @@ void asmlinkage __attribute__((weak)) early_printk(const char *fmt, ...)
 }
 
 #define __LOG_BUF_LEN	(1 << CONFIG_LOG_BUF_SHIFT)
+
+#ifdef        CONFIG_DEBUG_LL
+extern void printascii(char *);
+#endif
 
 /* printk's without a loglevel use this.. */
 #define DEFAULT_MESSAGE_LOGLEVEL 4 /* KERN_WARNING */
@@ -166,6 +168,24 @@ void log_buf_kexec_setup(void)
 	VMCOREINFO_SYMBOL(logged_chars);
 }
 #endif
+//{{ Mark for GetLog - 1/2
+struct struct_kernel_log_mark {
+u32 special_mark_1;
+u32 special_mark_2;
+u32 special_mark_3;
+u32 special_mark_4;
+void *p__log_buf;
+};
+
+static struct struct_kernel_log_mark kernel_log_mark = {
+       .special_mark_1 = (('*' << 24) | ('^' << 16) | ('^' << 8) | ('*' << 0)),
+       .special_mark_2 = (('I' << 24) | ('n' << 16) | ('f' << 8) | ('o' << 0)),
+       .special_mark_3 = (('H' << 24) | ('e' << 16) | ('r' << 8) | ('e' << 0)),
+       .special_mark_4 = (('k' << 24) | ('l' << 16) | ('o' << 8) | ('g' << 0)),
+       .p__log_buf = __log_buf, 
+};
+//}} Mark for GetLog - 1/2
+
 
 static int __init log_buf_len_setup(char *str)
 {
@@ -203,6 +223,11 @@ static int __init log_buf_len_setup(char *str)
 		printk(KERN_NOTICE "log_buf_len: %d\n", log_buf_len);
 	}
 out:
+	
+	//{{ Mark for GetLog - 2/2
+	kernel_log_mark.p__log_buf = __log_buf;
+	//}} Mark for GetLog - 2/2
+
 	return 1;
 }
 
@@ -261,6 +286,68 @@ static inline void boot_delay_msec(void)
 }
 #endif
 
+/*
+ * Return the number of unread characters in the log buffer.
+ */
+static int log_buf_get_len(void)
+{
+	return logged_chars;
+}
+
+/*
+ * Clears the ring-buffer
+ */
+void log_buf_clear(void)
+{
+	logged_chars = 0;
+}
+
+/*
+ * Copy a range of characters from the log buffer.
+ */
+int log_buf_copy(char *dest, int idx, int len)
+{
+	int ret, max;
+	bool took_lock = false;
+
+	if (!oops_in_progress) {
+		spin_lock_irq(&logbuf_lock);
+		took_lock = true;
+	}
+
+	max = log_buf_get_len();
+	if (idx < 0 || idx >= max) {
+		ret = -1;
+	} else {
+		if (len > max - idx)
+			len = max - idx;
+		ret = len;
+		idx += (log_end - max);
+		while (len-- > 0)
+			dest[len] = LOG_BUF(idx + len);
+	}
+
+	if (took_lock)
+		spin_unlock_irq(&logbuf_lock);
+
+	return ret;
+}
+
+/*
+ * Commands to do_syslog:
+ *
+ * 	0 -- Close the log.  Currently a NOP.
+ * 	1 -- Open the log. Currently a NOP.
+ * 	2 -- Read from the log.
+ * 	3 -- Read all messages remaining in the ring buffer.
+ * 	4 -- Read and clear all messages remaining in the ring buffer
+ * 	5 -- Clear ring buffer.
+ * 	6 -- Disable printk's to console
+ * 	7 -- Enable printk's to console
+ *	8 -- Set level of messages printed to console
+ *	9 -- Return number of unread characters in the log buffer
+ *     10 -- Return size of the log buffer
+ */
 int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	unsigned i, j, limit, count;
@@ -689,6 +776,11 @@ static inline void printk_delay(void)
 	}
 }
 
+#ifdef CONFIG_BRCM_UNIFIED_LOGGING
+/* Unified logging */
+#include "brcm_ulogging_printk.h"
+#endif
+
 asmlinkage int vprintk(const char *fmt, va_list args)
 {
 	int printed_len = 0;
@@ -736,6 +828,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	printed_len += vscnprintf(printk_buf + printed_len,
 				  sizeof(printk_buf) - printed_len, fmt, args);
 
+#ifdef	CONFIG_DEBUG_LL
+	printascii(printk_buf);
+#endif
 
 	p = printk_buf;
 
@@ -760,6 +855,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 		}
 	}
 
+#ifdef CONFIG_BRCM_UNIFIED_LOGGING
+#include "brcm_ulogging_printkmtt.h"
+#endif
 	/*
 	 * Copy the output into log_buf.  If the caller didn't provide
 	 * appropriate log level tags, we insert them here
@@ -773,7 +871,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 			printed_len += 3;
 			new_text_line = 0;
 
-			if (printk_time) {
+			if(printk_time){
 				/* Follow the token with the time */
 				char tbuf[50], *tp;
 				unsigned tlen;
@@ -984,32 +1082,6 @@ void resume_console(void)
 	down(&console_sem);
 	console_suspended = 0;
 	release_console_sem();
-}
-
-/**
- * console_cpu_notify - print deferred console messages after CPU hotplug
- * @self: notifier struct
- * @action: CPU hotplug event
- * @hcpu: unused
- *
- * If printk() is called from a CPU that is not online yet, the messages
- * will be spooled but will not show up on the console.  This function is
- * called when a new CPU comes online (or fails to come up), and ensures
- * that any such output gets printed.
- */
-static int __cpuinit console_cpu_notify(struct notifier_block *self,
-	unsigned long action, void *hcpu)
-{
-	switch (action) {
-	case CPU_ONLINE:
-	case CPU_DEAD:
-	case CPU_DYING:
-	case CPU_DOWN_FAILED:
-	case CPU_UP_CANCELED:
-		acquire_console_sem();
-		release_console_sem();
-	}
-	return NOTIFY_OK;
 }
 
 /**
@@ -1399,7 +1471,7 @@ int unregister_console(struct console *console)
 }
 EXPORT_SYMBOL(unregister_console);
 
-static int __init printk_late_init(void)
+static int __init disable_boot_consoles(void)
 {
 	struct console *con;
 
@@ -1410,10 +1482,9 @@ static int __init printk_late_init(void)
 			unregister_console(con);
 		}
 	}
-	hotcpu_notifier(console_cpu_notify, 0);
 	return 0;
 }
-late_initcall(printk_late_init);
+late_initcall(disable_boot_consoles);
 
 #if defined CONFIG_PRINTK
 
@@ -1549,9 +1620,9 @@ void kmsg_dump(enum kmsg_dump_reason reason)
 	chars = logged_chars;
 	spin_unlock_irqrestore(&logbuf_lock, flags);
 
-	if (chars > end) {
-		s1 = log_buf + log_buf_len - chars + end;
-		l1 = chars - end;
+	if (logged_chars > end) {
+		s1 = log_buf + log_buf_len - logged_chars + end;
+		l1 = logged_chars - end;
 
 		s2 = log_buf;
 		l2 = end;
@@ -1559,8 +1630,8 @@ void kmsg_dump(enum kmsg_dump_reason reason)
 		s1 = "";
 		l1 = 0;
 
-		s2 = log_buf + end - chars;
-		l2 = chars;
+		s2 = log_buf + end - logged_chars;
+		l2 = logged_chars;
 	}
 
 	if (!spin_trylock_irqsave(&dump_list_lock, flags)) {

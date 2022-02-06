@@ -47,7 +47,7 @@
 #include <linux/i2c-id.h>
 #include <linux/workqueue.h>
 
-#include <media/ir-core.h>
+#include <media/ir-common.h>
 #include <media/ir-kbd-i2c.h>
 
 /* ----------------------------------------------------------------------- */
@@ -272,8 +272,11 @@ static void ir_key_poll(struct IR_i2c *ir)
 		return;
 	}
 
-	if (rc)
-		ir_keydown(ir->input, ir_key, 0);
+	if (0 == rc) {
+		ir_input_nokey(ir->input, &ir->ir);
+	} else {
+		ir_input_keydown(ir->input, &ir->ir, ir_key);
+	}
 }
 
 static void ir_work(struct work_struct *work)
@@ -436,7 +439,10 @@ static int ir_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		 dev_name(&client->dev));
 
 	/* init + register input device */
-	ir->ir_type = ir_type;
+	err = ir_input_init(input_dev, &ir->ir, ir_type);
+	if (err < 0)
+		goto err_out_free;
+
 	input_dev->id.bustype = BUS_I2C;
 	input_dev->name       = ir->name;
 	input_dev->phys       = ir->phys;

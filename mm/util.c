@@ -225,10 +225,15 @@ char *strndup_user(const char __user *s, long n)
 	if (length > n)
 		return ERR_PTR(-EINVAL);
 
-	p = memdup_user(s, length);
+	p = kmalloc(length, GFP_KERNEL);
 
-	if (IS_ERR(p))
-		return p;
+	if (!p)
+		return ERR_PTR(-ENOMEM);
+
+	if (copy_from_user(p, s, length)) {
+		kfree(p);
+		return ERR_PTR(-EFAULT);
+	}
 
 	p[length - 1] = '\0';
 

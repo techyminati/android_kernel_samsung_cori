@@ -49,6 +49,7 @@
 #include <linux/ioport.h>
 #include <linux/crc32.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ciscode.h>
@@ -248,8 +249,9 @@ static int fmvj18x_probe(struct pcmcia_device *link)
     lp->base = NULL;
 
     /* The io structure describes IO port mapping */
-    link->resource[0]->end = 32;
-    link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
+    link->io.NumPorts1 = 32;
+    link->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
+    link->io.IOAddrLines = 5;
 
     /* General socket configuration */
     link->conf.Attributes = CONF_ENABLE_IRQ;
@@ -287,13 +289,13 @@ static int mfc_try_io_port(struct pcmcia_device *link)
 	{ 0x3f8, 0x2f8, 0x3e8, 0x2e8, 0x0 };
 
     for (i = 0; i < 5; i++) {
-	link->resource[1]->start = serial_base[i];
-	link->resource[1]->flags |= IO_DATA_PATH_WIDTH_8;
-	if (link->resource[1]->start == 0) {
-	    link->resource[1]->end = 0;
+	link->io.BasePort2 = serial_base[i];
+	link->io.Attributes2 = IO_DATA_PATH_WIDTH_8;
+	if (link->io.BasePort2 == 0) {
+	    link->io.NumPorts2 = 0;
 	    printk(KERN_NOTICE "fmvj18x_cs: out of resource for serial\n");
 	}
-	ret = pcmcia_request_io(link);
+	ret = pcmcia_request_io(link, &link->io);
 	if (ret == 0)
 		return ret;
     }
@@ -309,12 +311,12 @@ static int ungermann_try_io_port(struct pcmcia_device *link)
 	0x380,0x3c0 only for ioport.
     */
     for (ioaddr = 0x300; ioaddr < 0x3e0; ioaddr += 0x20) {
-	link->resource[0]->start = ioaddr;
-	ret = pcmcia_request_io(link);
+	link->io.BasePort1 = ioaddr;
+	ret = pcmcia_request_io(link, &link->io);
 	if (ret == 0) {
 	    /* calculate ConfigIndex value */
 	    link->conf.ConfigIndex = 
-		((link->resource[0]->start & 0x0f0) >> 3) | 0x22;
+		((link->io.BasePort1 & 0x0f0) >> 3) | 0x22;
 	    return ret;
 	}
     }
@@ -344,8 +346,6 @@ static int fmvj18x_config(struct pcmcia_device *link)
 
     dev_dbg(&link->dev, "fmvj18x_config\n");
 
-    link->io_lines = 5;
-
     len = pcmcia_get_tuple(link, CISTPL_FUNCE, &buf);
     kfree(buf);
 
@@ -364,20 +364,20 @@ static int fmvj18x_config(struct pcmcia_device *link)
 		/* MultiFunction Card */
 		link->conf.ConfigBase = 0x800;
 		link->conf.ConfigIndex = 0x47;
-		link->resource[1]->end = 8;
+		link->io.NumPorts2 = 8;
 	    }
 	    break;
 	case MANFID_NEC:
 	    cardtype = NEC; /* MultiFunction Card */
 	    link->conf.ConfigBase = 0x800;
 	    link->conf.ConfigIndex = 0x47;
-	    link->resource[1]->end = 8;
+	    link->io.NumPorts2 = 8;
 	    break;
 	case MANFID_KME:
 	    cardtype = KME; /* MultiFunction Card */
 	    link->conf.ConfigBase = 0x800;
 	    link->conf.ConfigIndex = 0x47;
-	    link->resource[1]->end = 8;
+	    link->io.NumPorts2 = 8;
 	    break;
 	case MANFID_CONTEC:
 	    cardtype = CONTEC;
@@ -418,14 +418,14 @@ static int fmvj18x_config(struct pcmcia_device *link)
 	}
     }
 
-    if (link->resource[1]->end != 0) {
+    if (link->io.NumPorts2 != 0) {
 	ret = mfc_try_io_port(link);
 	if (ret != 0) goto failed;
     } else if (cardtype == UNGERMANN) {
 	ret = ungermann_try_io_port(link);
 	if (ret != 0) goto failed;
     } else { 
-	    ret = pcmcia_request_io(link);
+	    ret = pcmcia_request_io(link, &link->io);
 	    if (ret)
 		    goto failed;
     }
@@ -437,9 +437,9 @@ static int fmvj18x_config(struct pcmcia_device *link)
 	    goto failed;
 
     dev->irq = link->irq;
-    dev->base_addr = link->resource[0]->start;
+    dev->base_addr = link->io.BasePort1;
 
-    if (resource_size(link->resource[1]) != 0) {
+    if (link->io.BasePort2 != 0) {
 	ret = fmvj18x_setup_mfc(link);
 	if (ret != 0) goto failed;
     }
@@ -545,6 +545,7 @@ failed:
 static int fmvj18x_get_hwinfo(struct pcmcia_device *link, u_char *node_id)
 {
     win_req_t req;
+    memreq_t mem;
     u_char __iomem *base;
     int i, j;
 
@@ -557,7 +558,9 @@ static int fmvj18x_get_hwinfo(struct pcmcia_device *link, u_char *node_id)
 	return -1;
 
     base = ioremap(req.Base, req.Size);
-    pcmcia_map_mem_page(link, link->win, 0);
+    mem.Page = 0;
+    mem.CardOffset = 0;
+    pcmcia_map_mem_page(link, link->win, &mem);
 
     /*
      *  MBH10304 CISTPL_FUNCE_LAN_NODE_ID format
@@ -591,6 +594,7 @@ static int fmvj18x_get_hwinfo(struct pcmcia_device *link, u_char *node_id)
 static int fmvj18x_setup_mfc(struct pcmcia_device *link)
 {
     win_req_t req;
+    memreq_t mem;
     int i;
     struct net_device *dev = link->priv;
     unsigned int ioaddr;
@@ -610,7 +614,9 @@ static int fmvj18x_setup_mfc(struct pcmcia_device *link)
 	return -1;
     }
 
-    i = pcmcia_map_mem_page(link, link->win, 0);
+    mem.Page = 0;
+    mem.CardOffset = 0;
+    i = pcmcia_map_mem_page(link, link->win, &mem);
     if (i != 0) {
 	iounmap(lp->base);
 	lp->base = NULL;

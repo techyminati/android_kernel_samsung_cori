@@ -121,22 +121,22 @@ struct mt9t112_priv {
 
 static const struct mt9t112_format mt9t112_cfmts[] = {
 	{
-		.code		= V4L2_MBUS_FMT_UYVY8_2X8,
+		.code		= V4L2_MBUS_FMT_YUYV8_2X8_BE,
 		.colorspace	= V4L2_COLORSPACE_JPEG,
 		.fmt		= 1,
 		.order		= 0,
 	}, {
-		.code		= V4L2_MBUS_FMT_VYUY8_2X8,
+		.code		= V4L2_MBUS_FMT_YVYU8_2X8_BE,
 		.colorspace	= V4L2_COLORSPACE_JPEG,
 		.fmt		= 1,
 		.order		= 1,
 	}, {
-		.code		= V4L2_MBUS_FMT_YUYV8_2X8,
+		.code		= V4L2_MBUS_FMT_YUYV8_2X8_LE,
 		.colorspace	= V4L2_COLORSPACE_JPEG,
 		.fmt		= 1,
 		.order		= 2,
 	}, {
-		.code		= V4L2_MBUS_FMT_YVYU8_2X8,
+		.code		= V4L2_MBUS_FMT_YVYU8_2X8_LE,
 		.colorspace	= V4L2_COLORSPACE_JPEG,
 		.fmt		= 1,
 		.order		= 3,
@@ -972,7 +972,7 @@ static int mt9t112_s_crop(struct v4l2_subdev *sd, struct v4l2_crop *a)
 	struct v4l2_rect *rect = &a->c;
 
 	return mt9t112_set_params(client, rect->width, rect->height,
-				 V4L2_MBUS_FMT_UYVY8_2X8);
+				 V4L2_MBUS_FMT_YUYV8_2X8_BE);
 }
 
 static int mt9t112_g_fmt(struct v4l2_subdev *sd,
@@ -983,7 +983,7 @@ static int mt9t112_g_fmt(struct v4l2_subdev *sd,
 
 	if (!priv->format) {
 		int ret = mt9t112_set_params(client, VGA_WIDTH, VGA_HEIGHT,
-					     V4L2_MBUS_FMT_UYVY8_2X8);
+					     V4L2_MBUS_FMT_YUYV8_2X8_BE);
 		if (ret < 0)
 			return ret;
 	}

@@ -1102,7 +1102,7 @@ static int wm8961_register(struct wm8961_priv *wm8961)
 	ret = wm8961_reset(codec);
 	if (ret < 0) {
 		dev_err(codec->dev, "Failed to issue reset\n");
-		goto err;
+		return ret;
 	}
 
 	/* Enable class W */
@@ -1147,19 +1147,18 @@ static int wm8961_register(struct wm8961_priv *wm8961)
 	ret = snd_soc_register_codec(codec);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to register codec: %d\n", ret);
-		goto err;
+		return ret;
 	}
 
 	ret = snd_soc_register_dai(&wm8961_dai);
 	if (ret != 0) {
 		dev_err(codec->dev, "Failed to register DAI: %d\n", ret);
-		goto err_codec;
+		snd_soc_unregister_codec(codec);
+		return ret;
 	}
 
 	return 0;
 
-err_codec:
-	snd_soc_unregister_codec(codec);
 err:
 	kfree(wm8961);
 	return ret;

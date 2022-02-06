@@ -57,12 +57,10 @@
 #include <asm/unaligned.h>
 
 
-/*
- * Thanks to NetChip Technologies for donating this product ID.
+/* Thanks to NetChip Technologies for donating this product ID.
  *
  * DO NOT REUSE THESE IDs with any other driver!!  Ever!!
- * Instead:  allocate your own, using normal USB-IF procedures.
- */
+ * Instead:  allocate your own, using normal USB-IF procedures. */
 #define FSG_VENDOR_ID	0x0525	/* NetChip */
 #define FSG_PRODUCT_ID	0xa4a5	/* Linux-USB File-backed Storage Gadget */
 
@@ -86,27 +84,14 @@
 #define LWARN(lun, fmt, args...)  dev_warn(&(lun)->dev, fmt, ## args)
 #define LINFO(lun, fmt, args...)  dev_info(&(lun)->dev, fmt, ## args)
 
-/*
- * Keep those macros in sync with those in
- * include/linux/usb/composite.h or else GCC will complain.  If they
+/* Keep those macros in sync with thos in
+ * include/linux/ubs/composite.h or else GCC will complain.  If they
  * are identical (the same names of arguments, white spaces in the
  * same places) GCC will allow redefinition otherwise (even if some
- * white space is removed or added) warning will be issued.
- *
- * Those macros are needed here because File Storage Gadget does not
- * include the composite.h header.  For composite gadgets those macros
- * are redundant since composite.h is included any way.
- *
- * One could check whether those macros are already defined (which
- * would indicate composite.h had been included) or not (which would
- * indicate we were in FSG) but this is not done because a warning is
- * desired if definitions here differ from the ones in composite.h.
- *
- * We want the definitions to match and be the same in File Storage
- * Gadget as well as Mass Storage Function (and so composite gadgets
- * using MSF).  If someone changes them in composite.h it will produce
- * a warning in this file when building MSF.
- */
+ * white space is removed or added) warning will be issued.  No
+ * checking if those symbols is defined is performed because warning
+ * is desired when those macros were defined by someone else to mean
+ * something else. */
 #define DBG(d, fmt, args...)     dev_dbg(&(d)->gadget->dev , fmt , ## args)
 #define VDBG(d, fmt, args...)    dev_vdbg(&(d)->gadget->dev , fmt , ## args)
 #define ERROR(d, fmt, args...)   dev_err(&(d)->gadget->dev , fmt , ## args)
@@ -284,7 +269,6 @@ struct fsg_lun {
 	unsigned int	prevent_medium_removal:1;
 	unsigned int	registered:1;
 	unsigned int	info_valid:1;
-	unsigned int	nofua:1;
 
 	u32		sense_data;
 	u32		sense_data_info;
@@ -329,11 +313,9 @@ struct fsg_buffhd {
 	enum fsg_buffer_state		state;
 	struct fsg_buffhd		*next;
 
-	/*
-	 * The NetChip 2280 is faster, and handles some protocol faults
+	/* The NetChip 2280 is faster, and handles some protocol faults
 	 * better, if we don't submit any short bulk-out read requests.
-	 * So we will record the intended request length here.
-	 */
+	 * So we will record the intended request length here. */
 	unsigned int			bulk_out_intended_length;
 
 	struct usb_request		*inreq;
@@ -413,10 +395,8 @@ fsg_intf_desc = {
 	.iInterface =		FSG_STRING_INTERFACE,
 };
 
-/*
- * Three full-speed endpoint descriptors: bulk-in, bulk-out, and
- * interrupt-in.
- */
+/* Three full-speed endpoint descriptors: bulk-in, bulk-out,
+ * and interrupt-in. */
 
 static struct usb_endpoint_descriptor
 fsg_fs_bulk_in_desc = {
@@ -479,7 +459,7 @@ static struct usb_descriptor_header *fsg_fs_function[] = {
  *
  * That means alternate endpoint descriptors (bigger packets)
  * and a "device qualifier" ... plus more construction options
- * for the configuration descriptor.
+ * for the config descriptor.
  */
 static struct usb_endpoint_descriptor
 fsg_hs_bulk_in_desc = {
@@ -567,10 +547,8 @@ static struct usb_gadget_strings	fsg_stringtab = {
 
  /*-------------------------------------------------------------------------*/
 
-/*
- * If the next two routines are called while the gadget is registered,
- * the caller must own fsg->filesem for writing.
- */
+/* If the next two routines are called while the gadget is registered,
+ * the caller must own fsg->filesem for writing. */
 
 static int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 {
@@ -609,10 +587,8 @@ static int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 		goto out;
 	}
 
-	/*
-	 * If we can't read the file, it's no good.
-	 * If we can't write the file, use it read-only.
-	 */
+	/* If we can't read the file, it's no good.
+	 * If we can't write the file, use it read-only. */
 	if (!filp->f_op || !(filp->f_op->read || filp->f_op->aio_read)) {
 		LINFO(curlun, "file not readable: %s\n", filename);
 		goto out;
@@ -670,10 +646,8 @@ static void fsg_lun_close(struct fsg_lun *curlun)
 
 /*-------------------------------------------------------------------------*/
 
-/*
- * Sync the file data, don't bother with the metadata.
- * This code was copied from fs/buffer.c:sys_fdatasync().
- */
+/* Sync the file data, don't bother with the metadata.
+ * This code was copied from fs/buffer.c:sys_fdatasync(). */
 static int fsg_lun_fsync_sub(struct fsg_lun *curlun)
 {
 	struct file	*filp = curlun->filp;
@@ -715,14 +689,6 @@ static ssize_t fsg_show_ro(struct device *dev, struct device_attribute *attr,
 				  : curlun->initially_ro);
 }
 
-static ssize_t fsg_show_nofua(struct device *dev, struct device_attribute *attr,
-			      char *buf)
-{
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
-
-	return sprintf(buf, "%u\n", curlun->nofua);
-}
-
 static ssize_t fsg_show_file(struct device *dev, struct device_attribute *attr,
 			     char *buf)
 {
@@ -757,45 +723,24 @@ static ssize_t fsg_store_ro(struct device *dev, struct device_attribute *attr,
 	ssize_t		rc = count;
 	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
 	struct rw_semaphore	*filesem = dev_get_drvdata(dev);
-	unsigned long	ro;
+	int		i;
 
-	if (strict_strtoul(buf, 2, &ro))
+	if (sscanf(buf, "%d", &i) != 1)
 		return -EINVAL;
 
-	/*
-	 * Allow the write-enable status to change only while the
-	 * backing file is closed.
-	 */
+	/* Allow the write-enable status to change only while the backing file
+	 * is closed. */
 	down_read(filesem);
 	if (fsg_lun_is_open(curlun)) {
 		LDBG(curlun, "read-only status change prevented\n");
 		rc = -EBUSY;
 	} else {
-		curlun->ro = ro;
-		curlun->initially_ro = ro;
+		curlun->ro = !!i;
+		curlun->initially_ro = !!i;
 		LDBG(curlun, "read-only status set to %d\n", curlun->ro);
 	}
 	up_read(filesem);
 	return rc;
-}
-
-static ssize_t fsg_store_nofua(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
-{
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
-	unsigned long	nofua;
-
-	if (strict_strtoul(buf, 2, &nofua))
-		return -EINVAL;
-
-	/* Sync data when switching from async mode to sync */
-	if (!nofua && curlun->nofua)
-		fsg_lun_fsync_sub(curlun);
-
-	curlun->nofua = nofua;
-
-	return count;
 }
 
 static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
@@ -805,10 +750,16 @@ static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
 	struct rw_semaphore	*filesem = dev_get_drvdata(dev);
 	int		rc = 0;
 
+
+#ifndef CONFIG_USB_ANDROID_MASS_STORAGE
+	/* disabled in android because we need to allow closing the backing file
+	 * if the media was removed
+	 */
 	if (curlun->prevent_medium_removal && fsg_lun_is_open(curlun)) {
 		LDBG(curlun, "eject attempt prevented\n");
 		return -EBUSY;				/* "Door is locked" */
 	}
+#endif
 
 	/* Remove a trailing newline */
 	if (count > 0 && buf[count-1] == '\n')

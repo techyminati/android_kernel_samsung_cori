@@ -5868,8 +5868,7 @@ static int osst_probe(struct device *dev)
 	}
 
 	/* find a free minor number */
-	for (i = 0; i < osst_max_dev && os_scsi_tapes[i]; i++)
-		;
+	for (i=0; os_scsi_tapes[i] && i<osst_max_dev; i++);
 	if(i >= osst_max_dev) panic ("Scsi_devices corrupt (osst)");
 	dev_num = i;
 

@@ -17,7 +17,6 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
-#include <linux/mm.h>
 #include <linux/fs.h>
 #include <linux/quotaops.h>
 #include "jfs_incore.h"
@@ -108,18 +107,11 @@ int jfs_setattr(struct dentry *dentry, struct iattr *iattr)
 			return rc;
 	}
 
-	if ((iattr->ia_valid & ATTR_SIZE) &&
-	    iattr->ia_size != i_size_read(inode)) {
-		rc = vmtruncate(inode, iattr->ia_size);
-		if (rc)
-			return rc;
-	}
+	rc = inode_setattr(inode, iattr);
 
-	setattr_copy(inode, iattr);
-	mark_inode_dirty(inode);
-
-	if (iattr->ia_valid & ATTR_MODE)
+	if (!rc && (iattr->ia_valid & ATTR_MODE))
 		rc = jfs_acl_chmod(inode);
+
 	return rc;
 }
 

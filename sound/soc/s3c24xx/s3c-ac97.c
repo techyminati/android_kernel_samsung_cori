@@ -31,6 +31,7 @@
 #define AC_CMD_DATA(x) (x & 0xffff)
 
 struct s3c_ac97_info {
+	unsigned           state;
 	struct clk         *ac97_clk;
 	void __iomem	   *regs;
 	struct mutex       lock;

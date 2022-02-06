@@ -210,44 +210,42 @@ static int sound_open(struct inode *inode, struct file *file)
 		printk(KERN_ERR "Invalid minor device %d\n", dev);
 		return -ENXIO;
 	}
-	lock_kernel();
 	switch (dev & 0x0f) {
 	case SND_DEV_CTL:
 		dev >>= 4;
 		if (dev >= 0 && dev < MAX_MIXER_DEV && mixer_devs[dev] == NULL) {
 			request_module("mixer%d", dev);
 		}
-		retval = -ENXIO;
 		if (dev && (dev >= num_mixers || mixer_devs[dev] == NULL))
-			break;
+			return -ENXIO;
 	
 		if (!try_module_get(mixer_devs[dev]->owner))
-			break;
-
-		retval = 0;
+			return -ENXIO;
 		break;
 
 	case SND_DEV_SEQ:
 	case SND_DEV_SEQ2:
-		retval = sequencer_open(dev, file);
+		if ((retval = sequencer_open(dev, file)) < 0)
+			return retval;
 		break;
 
 	case SND_DEV_MIDIN:
-		retval = MIDIbuf_open(dev, file);
+		if ((retval = MIDIbuf_open(dev, file)) < 0)
+			return retval;
 		break;
 
 	case SND_DEV_DSP:
 	case SND_DEV_DSP16:
 	case SND_DEV_AUDIO:
-		retval = audio_open(dev, file);
+		if ((retval = audio_open(dev, file)) < 0)
+			return retval;
 		break;
 
 	default:
 		printk(KERN_ERR "Invalid minor device %d\n", dev);
-		retval = -ENXIO;
+		return -ENXIO;
 	}
 
-	unlock_kernel();
 	return 0;
 }
 

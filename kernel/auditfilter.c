@@ -71,7 +71,6 @@ static inline void audit_free_rule(struct audit_entry *e)
 {
 	int i;
 	struct audit_krule *erule = &e->rule;
-
 	/* some rules don't have associated watches */
 	if (erule->watch)
 		audit_put_watch(erule->watch);
@@ -747,7 +746,8 @@ static inline int audit_dupe_lsm_field(struct audit_field *df,
  * rule with the new rule in the filterlist, then free the old rule.
  * The rlist element is undefined; list manipulations are handled apart from
  * the initial copy. */
-struct audit_entry *audit_dupe_rule(struct audit_krule *old)
+struct audit_entry *audit_dupe_rule(struct audit_krule *old,
+				    struct audit_watch *watch)
 {
 	u32 fcount = old->field_count;
 	struct audit_entry *entry;
@@ -769,8 +769,8 @@ struct audit_entry *audit_dupe_rule(struct audit_krule *old)
 	new->prio = old->prio;
 	new->buflen = old->buflen;
 	new->inode_f = old->inode_f;
+	new->watch = NULL;
 	new->field_count = old->field_count;
-
 	/*
 	 * note that we are OK with not refcounting here; audit_match_tree()
 	 * never dereferences tree and we can't get false positives there
@@ -811,9 +811,9 @@ struct audit_entry *audit_dupe_rule(struct audit_krule *old)
 		}
 	}
 
-	if (old->watch) {
-		audit_get_watch(old->watch);
-		new->watch = old->watch;
+	if (watch) {
+		audit_get_watch(watch);
+		new->watch = watch;
 	}
 
 	return entry;
@@ -866,7 +866,7 @@ static inline int audit_add_rule(struct audit_entry *entry)
 	struct audit_watch *watch = entry->rule.watch;
 	struct audit_tree *tree = entry->rule.tree;
 	struct list_head *list;
-	int err;
+	int h, err;
 #ifdef CONFIG_AUDITSYSCALL
 	int dont_count = 0;
 
@@ -889,11 +889,15 @@ static inline int audit_add_rule(struct audit_entry *entry)
 
 	if (watch) {
 		/* audit_filter_mutex is dropped and re-taken during this call */
-		err = audit_add_watch(&entry->rule, &list);
+		err = audit_add_watch(&entry->rule);
 		if (err) {
 			mutex_unlock(&audit_filter_mutex);
 			goto error;
 		}
+		/* entry->rule.watch may have changed during audit_add_watch() */
+		watch = entry->rule.watch;
+		h = audit_hash_ino((u32)audit_watch_inode(watch));
+		list = &audit_inode_hash[h];
 	}
 	if (tree) {
 		err = audit_add_tree_rule(&entry->rule);
@@ -945,6 +949,7 @@ static inline int audit_del_rule(struct audit_entry *entry)
 	struct audit_watch *watch = entry->rule.watch;
 	struct audit_tree *tree = entry->rule.tree;
 	struct list_head *list;
+	LIST_HEAD(inotify_list);
 	int ret = 0;
 #ifdef CONFIG_AUDITSYSCALL
 	int dont_count = 0;
@@ -964,7 +969,7 @@ static inline int audit_del_rule(struct audit_entry *entry)
 	}
 
 	if (e->rule.watch)
-		audit_remove_watch_rule(&e->rule);
+		audit_remove_watch_rule(&e->rule, &inotify_list);
 
 	if (e->rule.tree)
 		audit_remove_tree_rule(&e->rule);
@@ -981,6 +986,9 @@ static inline int audit_del_rule(struct audit_entry *entry)
 		audit_signals--;
 #endif
 	mutex_unlock(&audit_filter_mutex);
+
+	if (!list_empty(&inotify_list))
+		audit_inotify_unregister(&inotify_list);
 
 out:
 	if (watch)
@@ -1315,23 +1323,30 @@ static int update_lsm_rule(struct audit_krule *r)
 {
 	struct audit_entry *entry = container_of(r, struct audit_entry, rule);
 	struct audit_entry *nentry;
+	struct audit_watch *watch;
+	struct audit_tree *tree;
 	int err = 0;
 
 	if (!security_audit_rule_known(r))
 		return 0;
 
-	nentry = audit_dupe_rule(r);
+	watch = r->watch;
+	tree = r->tree;
+	nentry = audit_dupe_rule(r, watch);
 	if (IS_ERR(nentry)) {
 		/* save the first error encountered for the
 		 * return value */
 		err = PTR_ERR(nentry);
 		audit_panic("error updating LSM filters");
-		if (r->watch)
+		if (watch)
 			list_del(&r->rlist);
 		list_del_rcu(&entry->list);
 		list_del(&r->list);
 	} else {
-		if (r->watch || r->tree)
+		if (watch) {
+			list_add(&nentry->rule.rlist, audit_watch_rules(watch));
+			list_del(&r->rlist);
+		} else if (tree)
 			list_replace_init(&r->rlist, &nentry->rule.rlist);
 		list_replace_rcu(&entry->list, &nentry->list);
 		list_replace(&r->list, &nentry->rule.list);

@@ -33,7 +33,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
-#include <linux/mutex.h>
+#include <linux/smp_lock.h>
 #include <linux/string.h>
 #include <linux/miscdevice.h>
 #include <linux/init.h>
@@ -61,7 +61,6 @@ typedef struct openprom_private_data
 } DATA;
 
 /* ID of the PROM node containing all of the EEPROM options. */
-static DEFINE_MUTEX(openprom_mutex);
 static struct device_node *options_node;
 
 /*
@@ -317,7 +316,7 @@ static long openprom_sunos_ioctl(struct file * file,
 	if (bufsize < 0)
 		return bufsize;
 
-	mutex_lock(&openprom_mutex);
+	lock_kernel();
 
 	switch (cmd) {
 	case OPROMGETOPT:
@@ -368,7 +367,7 @@ static long openprom_sunos_ioctl(struct file * file,
 	}
 
 	kfree(opp);
-	mutex_unlock(&openprom_mutex);
+	unlock_kernel();
 
 	return error;
 }
@@ -559,7 +558,7 @@ static int openprom_bsd_ioctl(struct file * file,
 	void __user *argp = (void __user *)arg;
 	int err;
 
-	mutex_lock(&openprom_mutex);
+	lock_kernel();
 	switch (cmd) {
 	case OPIOCGET:
 		err = opiocget(argp, data);
@@ -590,7 +589,7 @@ static int openprom_bsd_ioctl(struct file * file,
 		err = -EINVAL;
 		break;
 	};
-	mutex_unlock(&openprom_mutex);
+	unlock_kernel();
 
 	return err;
 }
@@ -698,11 +697,11 @@ static int openprom_open(struct inode * inode, struct file * file)
 	if (!data)
 		return -ENOMEM;
 
-	mutex_lock(&openprom_mutex);
+	lock_kernel();
 	data->current_node = of_find_node_by_path("/");
 	data->lastnode = data->current_node;
 	file->private_data = (void *) data;
-	mutex_unlock(&openprom_mutex);
+	unlock_kernel();
 
 	return 0;
 }

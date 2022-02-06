@@ -370,23 +370,6 @@ void flush_iotlb_all(struct iommu *obj)
 }
 EXPORT_SYMBOL_GPL(flush_iotlb_all);
 
-/**
- * iommu_set_twl - enable/disable table walking logic
- * @obj:	target iommu
- * @on:		enable/disable
- *
- * Function used to enable/disable TWL. If one wants to work
- * exclusively with locked TLB entries and receive notifications
- * for TLB miss then call this function to disable TWL.
- */
-void iommu_set_twl(struct iommu *obj, bool on)
-{
-	clk_enable(obj->clk);
-	arch_iommu->set_twl(obj, on);
-	clk_disable(obj->clk);
-}
-EXPORT_SYMBOL_GPL(iommu_set_twl);
-
 #if defined(CONFIG_OMAP_IOMMU_DEBUG_MODULE)
 
 ssize_t iommu_dump_ctx(struct iommu *obj, char *buf, ssize_t bytes)
@@ -670,7 +653,7 @@ void iopgtable_lookup_entry(struct iommu *obj, u32 da, u32 **ppgd, u32 **ppte)
 	if (!*iopgd)
 		goto out;
 
-	if (iopgd_is_table(*iopgd))
+	if (*iopgd & IOPGD_TABLE)
 		iopte = iopte_offset(iopgd, da);
 out:
 	*ppgd = iopgd;
@@ -687,7 +670,7 @@ static size_t iopgtable_clear_entry_core(struct iommu *obj, u32 da)
 	if (!*iopgd)
 		return 0;
 
-	if (iopgd_is_table(*iopgd)) {
+	if (*iopgd & IOPGD_TABLE) {
 		int i;
 		u32 *iopte = iopte_offset(iopgd, da);
 
@@ -762,7 +745,7 @@ static void iopgtable_clear_entry_all(struct iommu *obj)
 		if (!*iopgd)
 			continue;
 
-		if (iopgd_is_table(*iopgd))
+		if (*iopgd & IOPGD_TABLE)
 			iopte_free(iopte_offset(iopgd, 0));
 
 		*iopgd = 0;
@@ -800,11 +783,9 @@ static irqreturn_t iommu_fault_handler(int irq, void *data)
 	if (!stat)
 		return IRQ_HANDLED;
 
-	iommu_disable(obj);
-
 	iopgd = iopgd_offset(obj, da);
 
-	if (!iopgd_is_table(*iopgd)) {
+	if (!(*iopgd & IOPGD_TABLE)) {
 		dev_err(obj->dev, "%s: da:%08x pgd:%p *pgd:%08x\n", __func__,
 			da, iopgd, *iopgd);
 		return IRQ_NONE;

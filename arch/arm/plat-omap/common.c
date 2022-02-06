@@ -22,7 +22,6 @@
 #include <linux/serial_reg.h>
 #include <linux/clk.h>
 #include <linux/io.h>
-#include <linux/omapfb.h>
 
 #include <mach/hardware.h>
 #include <asm/system.h>
@@ -36,7 +35,6 @@
 #include <plat/mux.h>
 #include <plat/fpga.h>
 #include <plat/serial.h>
-#include <plat/vram.h>
 
 #include <plat/clock.h>
 
@@ -82,12 +80,6 @@ const void *omap_get_var_config(u16 tag, size_t *len)
         return get_config(tag, NO_LENGTH_CHECK, 0, len);
 }
 EXPORT_SYMBOL(omap_get_var_config);
-
-void __init omap_reserve(void)
-{
-	omapfb_reserve_sdram_memblock();
-	omap_vram_reserve_sdram_memblock();
-}
 
 /*
  * 32KHz clocksource ... always available, on pretty most chips except
@@ -317,18 +309,18 @@ static struct omap_globals omap3_globals = {
 	.uart1_phys	= OMAP3_UART1_BASE,
 	.uart2_phys	= OMAP3_UART2_BASE,
 	.uart3_phys	= OMAP3_UART3_BASE,
-	.uart4_phys	= OMAP3_UART4_BASE,	/* Only on 3630 */
 };
 
-void __init omap2_set_globals_3xxx(void)
+void __init omap2_set_globals_343x(void)
 {
 	__omap2_set_globals(&omap3_globals);
 }
 
-void __init omap3_map_io(void)
+void __init omap2_set_globals_36xx(void)
 {
-	omap2_set_globals_3xxx();
-	omap34xx_map_common_io();
+	omap3_globals.uart4_phys = OMAP3_UART4_BASE;
+
+	__omap2_set_globals(&omap3_globals);
 }
 #endif
 

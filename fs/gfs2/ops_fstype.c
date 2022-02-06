@@ -17,6 +17,7 @@
 #include <linux/namei.h>
 #include <linux/mount.h>
 #include <linux/gfs2_ondisk.h>
+#include <linux/slow-work.h>
 #include <linux/quotaops.h>
 
 #include "gfs2.h"
@@ -75,7 +76,7 @@ static struct gfs2_sbd *init_sbd(struct super_block *sb)
 
 	sb->s_fs_info = sdp;
 	sdp->sd_vfs = sb;
-	set_bit(SDF_NOJOURNALID, &sdp->sd_flags);
+
 	gfs2_tune_init(&sdp->sd_tune);
 
 	init_waitqueue_head(&sdp->sd_glock_wait);
@@ -274,7 +275,7 @@ static int gfs2_read_super(struct gfs2_sbd *sdp, sector_t sector)
 
 	bio->bi_end_io = end_bio_io_page;
 	bio->bi_private = page;
-	submit_bio(READ_SYNC | REQ_META, bio);
+	submit_bio(READ_SYNC | (1 << BIO_RW_META), bio);
 	wait_on_page_locked(page);
 	bio_put(bio);
 	if (!PageUptodate(page)) {
@@ -672,7 +673,7 @@ static int gfs2_jindex_hold(struct gfs2_sbd *sdp, struct gfs2_holder *ji_gh)
 			break;
 
 		INIT_LIST_HEAD(&jd->extent_list);
-		INIT_WORK(&jd->jd_work, gfs2_recover_func);
+		slow_work_init(&jd->jd_work, &gfs2_recover_ops);
 		jd->jd_inode = gfs2_lookupi(sdp->sd_jindex, &name, 1);
 		if (!jd->jd_inode || IS_ERR(jd->jd_inode)) {
 			if (!jd->jd_inode)
@@ -781,8 +782,7 @@ static int init_journal(struct gfs2_sbd *sdp, int undo)
 	if (sdp->sd_lockstruct.ls_first) {
 		unsigned int x;
 		for (x = 0; x < sdp->sd_journals; x++) {
-			error = gfs2_recover_journal(gfs2_jdesc_find(sdp, x),
-						     true);
+			error = gfs2_recover_journal(gfs2_jdesc_find(sdp, x));
 			if (error) {
 				fs_err(sdp, "error recovering journal %u: %d\n",
 				       x, error);
@@ -792,7 +792,7 @@ static int init_journal(struct gfs2_sbd *sdp, int undo)
 
 		gfs2_others_may_mount(sdp);
 	} else if (!sdp->sd_args.ar_spectator) {
-		error = gfs2_recover_journal(sdp->sd_jdesc, true);
+		error = gfs2_recover_journal(sdp->sd_jdesc);
 		if (error) {
 			fs_err(sdp, "error recovering my journal: %d\n", error);
 			goto fail_jinode_gh;
@@ -1050,8 +1050,7 @@ static int gfs2_lm_mount(struct gfs2_sbd *sdp, int silent)
 			ret = match_int(&tmp[0], &option);
 			if (ret || option < 0) 
 				goto hostdata_error;
-			if (test_and_clear_bit(SDF_NOJOURNALID, &sdp->sd_flags))
-				ls->ls_jid = option;
+			ls->ls_jid = option;
 			break;
 		case Opt_id:
 			/* Obsolete, but left for backward compat purposes */
@@ -1101,24 +1100,6 @@ void gfs2_lm_unmount(struct gfs2_sbd *sdp)
 	if (likely(!test_bit(SDF_SHUTDOWN, &sdp->sd_flags)) &&
 	    lm->lm_unmount)
 		lm->lm_unmount(sdp);
-}
-
-static int gfs2_journalid_wait(void *word)
-{
-	if (signal_pending(current))
-		return -EINTR;
-	schedule();
-	return 0;
-}
-
-static int wait_on_journal(struct gfs2_sbd *sdp)
-{
-	if (sdp->sd_args.ar_spectator)
-		return 0;
-	if (sdp->sd_lockstruct.ls_ops->lm_mount == NULL)
-		return 0;
-
-	return wait_on_bit(&sdp->sd_flags, SDF_NOJOURNALID, gfs2_journalid_wait, TASK_INTERRUPTIBLE);
 }
 
 void gfs2_online_uevent(struct gfs2_sbd *sdp)
@@ -1212,10 +1193,6 @@ static int fill_super(struct super_block *sb, struct gfs2_args *args, int silent
 	error = init_sb(sdp, silent);
 	if (error)
 		goto fail_locking;
-
-	error = wait_on_journal(sdp);
-	if (error)
-		goto fail_sb;
 
 	error = init_inodes(sdp, DO);
 	if (error)

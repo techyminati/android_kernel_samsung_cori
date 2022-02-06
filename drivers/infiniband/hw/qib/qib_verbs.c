@@ -550,12 +550,10 @@ static void qib_qp_rcv(struct qib_ctxtdata *rcd, struct qib_ib_header *hdr,
 {
 	struct qib_ibport *ibp = &rcd->ppd->ibport_data;
 
-	spin_lock(&qp->r_lock);
-
 	/* Check for valid receive state. */
 	if (!(ib_qib_state_ops[qp->state] & QIB_PROCESS_RECV_OK)) {
 		ibp->n_pkt_drops++;
-		goto unlock;
+		return;
 	}
 
 	switch (qp->ibqp.qp_type) {
@@ -579,9 +577,6 @@ static void qib_qp_rcv(struct qib_ctxtdata *rcd, struct qib_ib_header *hdr,
 	default:
 		break;
 	}
-
-unlock:
-	spin_unlock(&qp->r_lock);
 }
 
 /**

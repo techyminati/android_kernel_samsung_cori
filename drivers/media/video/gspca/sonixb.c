@@ -1251,10 +1251,16 @@ static void sd_pkt_scan(struct gspca_dev *gspca_dev,
 	if (cam->cam_mode[gspca_dev->curr_mode].priv & MODE_RAW) {
 		/* In raw mode we sometimes get some garbage after the frame
 		   ignore this */
+		struct gspca_frame *frame;
 		int used;
 		int size = cam->cam_mode[gspca_dev->curr_mode].sizeimage;
 
-		used = gspca_dev->image_len;
+		frame = gspca_get_i_frame(gspca_dev);
+		if (frame == NULL) {
+			gspca_dev->last_packet_type = DISCARD_PACKET;
+			return;
+		}
+		used = frame->data_end - frame->data;
 		if (used + len > size)
 			len = size - used;
 	}

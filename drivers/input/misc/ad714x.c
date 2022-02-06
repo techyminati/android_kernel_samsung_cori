@@ -1118,7 +1118,7 @@ struct ad714x_chip *ad714x_probe(struct device *dev, u16 bus_type, int irq,
 	if (error)
 		goto err_free_mem;
 
-	/* initialize and request sw/hw resources */
+	/* initilize and request sw/hw resources */
 
 	ad714x_hw_init(ad714x);
 	mutex_init(&ad714x->mutex);

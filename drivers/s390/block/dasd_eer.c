@@ -701,7 +701,7 @@ int __init dasd_eer_init(void)
 void dasd_eer_exit(void)
 {
 	if (dasd_eer_dev) {
-		misc_deregister(dasd_eer_dev);
+		WARN_ON(misc_deregister(dasd_eer_dev) != 0);
 		kfree(dasd_eer_dev);
 		dasd_eer_dev = NULL;
 	}

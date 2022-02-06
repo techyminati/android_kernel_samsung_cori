@@ -75,11 +75,10 @@ static struct crypto_blkcipher *ceph_crypto_alloc_cipher(void)
 	return crypto_alloc_blkcipher("cbc(aes)", 0, CRYPTO_ALG_ASYNC);
 }
 
-static const u8 *aes_iv = (u8 *)CEPH_AES_IV;
+const u8 *aes_iv = "cephsageyudagreg";
 
-static int ceph_aes_encrypt(const void *key, int key_len,
-			    void *dst, size_t *dst_len,
-			    const void *src, size_t src_len)
+int ceph_aes_encrypt(const void *key, int key_len, void *dst, size_t *dst_len,
+		     const void *src, size_t src_len)
 {
 	struct scatterlist sg_in[2], sg_out[1];
 	struct crypto_blkcipher *tfm = ceph_crypto_alloc_cipher();
@@ -127,10 +126,9 @@ static int ceph_aes_encrypt(const void *key, int key_len,
 	return 0;
 }
 
-static int ceph_aes_encrypt2(const void *key, int key_len, void *dst,
-			     size_t *dst_len,
-			     const void *src1, size_t src1_len,
-			     const void *src2, size_t src2_len)
+int ceph_aes_encrypt2(const void *key, int key_len, void *dst, size_t *dst_len,
+		      const void *src1, size_t src1_len,
+		      const void *src2, size_t src2_len)
 {
 	struct scatterlist sg_in[3], sg_out[1];
 	struct crypto_blkcipher *tfm = ceph_crypto_alloc_cipher();
@@ -181,9 +179,8 @@ static int ceph_aes_encrypt2(const void *key, int key_len, void *dst,
 	return 0;
 }
 
-static int ceph_aes_decrypt(const void *key, int key_len,
-			    void *dst, size_t *dst_len,
-			    const void *src, size_t src_len)
+int ceph_aes_decrypt(const void *key, int key_len, void *dst, size_t *dst_len,
+		     const void *src, size_t src_len)
 {
 	struct scatterlist sg_in[1], sg_out[2];
 	struct crypto_blkcipher *tfm = ceph_crypto_alloc_cipher();
@@ -241,10 +238,10 @@ static int ceph_aes_decrypt(const void *key, int key_len,
 	return 0;
 }
 
-static int ceph_aes_decrypt2(const void *key, int key_len,
-			     void *dst1, size_t *dst1_len,
-			     void *dst2, size_t *dst2_len,
-			     const void *src, size_t src_len)
+int ceph_aes_decrypt2(const void *key, int key_len,
+		      void *dst1, size_t *dst1_len,
+		      void *dst2, size_t *dst2_len,
+		      const void *src, size_t src_len)
 {
 	struct scatterlist sg_in[1], sg_out[3];
 	struct crypto_blkcipher *tfm = ceph_crypto_alloc_cipher();

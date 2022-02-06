@@ -244,7 +244,7 @@ char * __init build_full_name(struct device_node *dp)
 
 	n = prom_early_alloc(len);
 	strcpy(n, dp->parent->full_name);
-	if (!of_node_is_root(dp->parent)) {
+	if (!is_root_node(dp->parent)) {
 		strcpy(n + plen, "/");
 		plen++;
 	}

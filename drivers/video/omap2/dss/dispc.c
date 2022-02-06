@@ -31,7 +31,6 @@
 #include <linux/seq_file.h>
 #include <linux/delay.h>
 #include <linux/workqueue.h>
-#include <linux/hardirq.h>
 
 #include <plat/sram.h>
 #include <plat/clock.h>
@@ -336,7 +335,7 @@ void dispc_save_context(void)
 void dispc_restore_context(void)
 {
 	RR(SYSCONFIG);
-	/*RR(IRQENABLE);*/
+	RR(IRQENABLE);
 	/*RR(CONTROL);*/
 	RR(CONFIG);
 	RR(DEFAULT_COLOR0);
@@ -473,15 +472,6 @@ void dispc_restore_context(void)
 
 	/* enable last, because LCD & DIGIT enable are here */
 	RR(CONTROL);
-
-	/* clear spurious SYNC_LOST_DIGIT interrupts */
-	dispc_write_reg(DISPC_IRQSTATUS, DISPC_IRQ_SYNC_LOST_DIGIT);
-
-	/*
-	 * enable last so IRQs won't trigger before
-	 * the context is fully restored
-	 */
-	RR(IRQENABLE);
 }
 
 #undef SR
@@ -3029,7 +3019,7 @@ void dispc_fake_vsync_irq(void)
 	u32 irqstatus = DISPC_IRQ_VSYNC;
 	int i;
 
-	WARN_ON(!in_interrupt());
+	local_irq_disable();
 
 	for (i = 0; i < DISPC_MAX_NR_ISRS; i++) {
 		struct omap_dispc_isr_data *isr_data;
@@ -3041,6 +3031,8 @@ void dispc_fake_vsync_irq(void)
 		if (isr_data->mask & irqstatus)
 			isr_data->isr(isr_data->arg, irqstatus);
 	}
+
+	local_irq_enable();
 }
 #endif
 

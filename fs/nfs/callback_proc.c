@@ -37,8 +37,8 @@ __be32 nfs4_callback_getattr(struct cb_getattrargs *args, struct cb_getattrres *
 	if (inode == NULL)
 		goto out_putclient;
 	nfsi = NFS_I(inode);
-	rcu_read_lock();
-	delegation = rcu_dereference(nfsi->delegation);
+	down_read(&nfsi->rwsem);
+	delegation = nfsi->delegation;
 	if (delegation == NULL || (delegation->type & FMODE_WRITE) == 0)
 		goto out_iput;
 	res->size = i_size_read(inode);
@@ -53,7 +53,7 @@ __be32 nfs4_callback_getattr(struct cb_getattrargs *args, struct cb_getattrres *
 		args->bitmap[1];
 	res->status = 0;
 out_iput:
-	rcu_read_unlock();
+	up_read(&nfsi->rwsem);
 	iput(inode);
 out_putclient:
 	nfs_put_client(clp);
@@ -61,6 +61,16 @@ out:
 	dprintk("%s: exit with status = %d\n", __func__, ntohl(res->status));
 	return res->status;
 }
+
+static int (*nfs_validate_delegation_stateid(struct nfs_client *clp))(struct nfs_delegation *, const nfs4_stateid *)
+{
+#if defined(CONFIG_NFS_V4_1)
+	if (clp->cl_minorversion > 0)
+		return nfs41_validate_delegation_stateid;
+#endif
+	return nfs4_validate_delegation_stateid;
+}
+
 
 __be32 nfs4_callback_recall(struct cb_recallargs *args, void *dummy)
 {
@@ -82,7 +92,8 @@ __be32 nfs4_callback_recall(struct cb_recallargs *args, void *dummy)
 		inode = nfs_delegation_find_inode(clp, &args->fh);
 		if (inode != NULL) {
 			/* Set up a helper thread to actually return the delegation */
-			switch (nfs_async_inode_return_delegation(inode, &args->stateid)) {
+			switch (nfs_async_inode_return_delegation(inode, &args->stateid,
+								  nfs_validate_delegation_stateid(clp))) {
 				case 0:
 					res = 0;
 					break;

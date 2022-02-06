@@ -151,10 +151,8 @@ static int do_kimage_alloc(struct kimage **rimage, unsigned long entry,
 	image->nr_segments = nr_segments;
 	segment_bytes = nr_segments * sizeof(*segments);
 	result = copy_from_user(image->segment, segments, segment_bytes);
-	if (result) {
-		result = -EFAULT;
+	if (result)
 		goto out;
-	}
 
 	/*
 	 * Verify we have good destination addresses.  The caller is
@@ -829,7 +827,7 @@ static int kimage_load_normal_segment(struct kimage *image,
 		result = copy_from_user(ptr, buf, uchunk);
 		kunmap(page);
 		if (result) {
-			result = -EFAULT;
+			result = (result < 0) ? result : -EIO;
 			goto out;
 		}
 		ubytes -= uchunk;
@@ -884,7 +882,7 @@ static int kimage_load_crash_segment(struct kimage *image,
 		kexec_flush_icache_page(page);
 		kunmap(page);
 		if (result) {
-			result = -EFAULT;
+			result = (result < 0) ? result : -EIO;
 			goto out;
 		}
 		ubytes -= uchunk;

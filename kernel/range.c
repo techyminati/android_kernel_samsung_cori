@@ -7,6 +7,10 @@
 
 #include <linux/range.h>
 
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#endif
+
 int add_range(struct range *range, int az, int nr_range, u64 start, u64 end)
 {
 	if (start >= end)

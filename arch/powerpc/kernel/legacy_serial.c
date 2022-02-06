@@ -4,7 +4,6 @@
 #include <linux/serial_core.h>
 #include <linux/console.h>
 #include <linux/pci.h>
-#include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <asm/io.h>
 #include <asm/mmu.h>

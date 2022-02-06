@@ -23,15 +23,25 @@
 #include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
+#include "xfs_dir2.h"
 #include "xfs_alloc.h"
+#include "xfs_dmapi.h"
 #include "xfs_quota.h"
 #include "xfs_mount.h"
 #include "xfs_bmap_btree.h"
+#include "xfs_alloc_btree.h"
+#include "xfs_ialloc_btree.h"
+#include "xfs_attr_sf.h"
+#include "xfs_dir2_sf.h"
+#include "xfs_dinode.h"
 #include "xfs_inode.h"
+#include "xfs_ialloc.h"
 #include "xfs_itable.h"
+#include "xfs_btree.h"
 #include "xfs_bmap.h"
 #include "xfs_rtalloc.h"
 #include "xfs_error.h"
+#include "xfs_rw.h"
 #include "xfs_attr.h"
 #include "xfs_buf_item.h"
 #include "xfs_trans_priv.h"
@@ -49,14 +59,16 @@ xfs_trans_dqjoin(
 	xfs_trans_t	*tp,
 	xfs_dquot_t	*dqp)
 {
+	xfs_dq_logitem_t    *lp = &dqp->q_logitem;
+
 	ASSERT(dqp->q_transp != tp);
 	ASSERT(XFS_DQ_IS_LOCKED(dqp));
-	ASSERT(dqp->q_logitem.qli_dquot == dqp);
+	ASSERT(lp->qli_dquot == dqp);
 
 	/*
 	 * Get a log_item_desc to point at the new item.
 	 */
-	xfs_trans_add_item(tp, &dqp->q_logitem.qli_item);
+	(void) xfs_trans_add_item(tp, (xfs_log_item_t*)(lp));
 
 	/*
 	 * Initialize i_transp so we can later determine if this dquot is
@@ -81,11 +93,16 @@ xfs_trans_log_dquot(
 	xfs_trans_t	*tp,
 	xfs_dquot_t	*dqp)
 {
+	xfs_log_item_desc_t	*lidp;
+
 	ASSERT(dqp->q_transp == tp);
 	ASSERT(XFS_DQ_IS_LOCKED(dqp));
 
+	lidp = xfs_trans_find_item(tp, (xfs_log_item_t*)(&dqp->q_logitem));
+	ASSERT(lidp != NULL);
+
 	tp->t_flags |= XFS_TRANS_DIRTY;
-	dqp->q_logitem.qli_item.li_desc->lid_flags |= XFS_LID_DIRTY;
+	lidp->lid_flags |= XFS_LID_DIRTY;
 }
 
 /*
@@ -857,8 +874,9 @@ xfs_trans_get_qoff_item(
 	/*
 	 * Get a log_item_desc to point at the new item.
 	 */
-	xfs_trans_add_item(tp, &q->qql_item);
-	return q;
+	(void) xfs_trans_add_item(tp, (xfs_log_item_t*)q);
+
+	return (q);
 }
 
 
@@ -872,8 +890,13 @@ xfs_trans_log_quotaoff_item(
 	xfs_trans_t		*tp,
 	xfs_qoff_logitem_t	*qlp)
 {
+	xfs_log_item_desc_t	*lidp;
+
+	lidp = xfs_trans_find_item(tp, (xfs_log_item_t *)qlp);
+	ASSERT(lidp != NULL);
+
 	tp->t_flags |= XFS_TRANS_DIRTY;
-	qlp->qql_item.li_desc->lid_flags |= XFS_LID_DIRTY;
+	lidp->lid_flags |= XFS_LID_DIRTY;
 }
 
 STATIC void

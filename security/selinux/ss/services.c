@@ -50,7 +50,6 @@
 #include <linux/audit.h>
 #include <linux/mutex.h>
 #include <linux/selinux.h>
-#include <linux/flex_array.h>
 #include <net/netlabel.h>
 
 #include "flask.h"
@@ -627,10 +626,8 @@ static void context_struct_compute_av(struct context *scontext,
 	 */
 	avkey.target_class = tclass;
 	avkey.specified = AVTAB_AV;
-	sattr = flex_array_get(policydb.type_attr_map_array, scontext->type - 1);
-	BUG_ON(!sattr);
-	tattr = flex_array_get(policydb.type_attr_map_array, tcontext->type - 1);
-	BUG_ON(!tattr);
+	sattr = &policydb.type_attr_map[scontext->type - 1];
+	tattr = &policydb.type_attr_map[tcontext->type - 1];
 	ebitmap_for_each_positive_bit(sattr, snode, i) {
 		ebitmap_for_each_positive_bit(tattr, tnode, j) {
 			avkey.source_type = i + 1;

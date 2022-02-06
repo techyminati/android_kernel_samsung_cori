@@ -3236,7 +3236,7 @@ struct niu_phy_ops {
 	int (*link_status)(struct niu *np, int *);
 };
 
-struct platform_device;
+struct of_device;
 struct niu {
 	void __iomem			*regs;
 	struct net_device		*dev;
@@ -3297,7 +3297,7 @@ struct niu {
 	struct niu_vpd			vpd;
 	u32				eeprom_len;
 
-	struct platform_device		*op;
+	struct of_device		*op;
 	void __iomem			*vir_regs_1;
 	void __iomem			*vir_regs_2;
 };

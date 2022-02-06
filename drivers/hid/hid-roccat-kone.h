@@ -14,6 +14,8 @@
 
 #include <linux/types.h>
 
+#define ROCCAT_KONE_DRIVER_VERSION "v0.3.1"
+
 #pragma pack(push)
 #pragma pack(1)
 

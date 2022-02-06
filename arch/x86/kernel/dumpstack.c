@@ -18,6 +18,7 @@
 
 #include <asm/stacktrace.h>
 
+#include "dumpstack.h"
 
 int panic_on_unrecovered_nmi;
 int panic_on_io_nmi;

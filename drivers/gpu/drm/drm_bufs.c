@@ -39,6 +39,19 @@
 #include <asm/shmparam.h>
 #include "drmP.h"
 
+resource_size_t drm_get_resource_start(struct drm_device *dev, unsigned int resource)
+{
+	return pci_resource_start(dev->pdev, resource);
+}
+EXPORT_SYMBOL(drm_get_resource_start);
+
+resource_size_t drm_get_resource_len(struct drm_device *dev, unsigned int resource)
+{
+	return pci_resource_len(dev->pdev, resource);
+}
+
+EXPORT_SYMBOL(drm_get_resource_len);
+
 static struct drm_map_list *drm_find_matching_map(struct drm_device *dev,
 						  struct drm_local_map *map)
 {
@@ -176,7 +189,7 @@ static int drm_addmap_core(struct drm_device * dev, resource_size_t offset,
 	switch (map->type) {
 	case _DRM_REGISTERS:
 	case _DRM_FRAME_BUFFER:
-#if !defined(__sparc__) && !defined(__alpha__) && !defined(__ia64__) && !defined(__powerpc64__) && !defined(__x86_64__) && !defined(__arm__)
+#if !defined(__sparc__) && !defined(__alpha__) && !defined(__ia64__) && !defined(__powerpc64__) && !defined(__x86_64__)
 		if (map->offset + (map->size-1) < map->offset ||
 		    map->offset < virt_to_phys(high_memory)) {
 			kfree(map);
@@ -328,13 +341,14 @@ static int drm_addmap_core(struct drm_device * dev, resource_size_t offset,
 		return -EINVAL;
 	}
 
-	list = kzalloc(sizeof(*list), GFP_KERNEL);
+	list = kmalloc(sizeof(*list), GFP_KERNEL);
 	if (!list) {
 		if (map->type == _DRM_REGISTERS)
 			iounmap(map->handle);
 		kfree(map);
 		return -EINVAL;
 	}
+	memset(list, 0, sizeof(*list));
 	list->map = map;
 
 	mutex_lock(&dev->struct_mutex);
@@ -677,12 +691,13 @@ int drm_addbufs_agp(struct drm_device * dev, struct drm_buf_desc * request)
 		return -EINVAL;
 	}
 
-	entry->buflist = kzalloc(count * sizeof(*entry->buflist), GFP_KERNEL);
+	entry->buflist = kmalloc(count * sizeof(*entry->buflist), GFP_KERNEL);
 	if (!entry->buflist) {
 		mutex_unlock(&dev->struct_mutex);
 		atomic_dec(&dev->buf_alloc);
 		return -ENOMEM;
 	}
+	memset(entry->buflist, 0, count * sizeof(*entry->buflist));
 
 	entry->buf_size = size;
 	entry->page_order = page_order;
@@ -706,7 +721,7 @@ int drm_addbufs_agp(struct drm_device * dev, struct drm_buf_desc * request)
 		buf->file_priv = NULL;
 
 		buf->dev_priv_size = dev->driver->dev_priv_size;
-		buf->dev_private = kzalloc(buf->dev_priv_size, GFP_KERNEL);
+		buf->dev_private = kmalloc(buf->dev_priv_size, GFP_KERNEL);
 		if (!buf->dev_private) {
 			/* Set count correctly so we free the proper amount. */
 			entry->buf_count = count;
@@ -715,6 +730,7 @@ int drm_addbufs_agp(struct drm_device * dev, struct drm_buf_desc * request)
 			atomic_dec(&dev->buf_alloc);
 			return -ENOMEM;
 		}
+		memset(buf->dev_private, 0, buf->dev_priv_size);
 
 		DRM_DEBUG("buffer %d @ %p\n", entry->buf_count, buf->address);
 
@@ -829,20 +845,22 @@ int drm_addbufs_pci(struct drm_device * dev, struct drm_buf_desc * request)
 		return -EINVAL;
 	}
 
-	entry->buflist = kzalloc(count * sizeof(*entry->buflist), GFP_KERNEL);
+	entry->buflist = kmalloc(count * sizeof(*entry->buflist), GFP_KERNEL);
 	if (!entry->buflist) {
 		mutex_unlock(&dev->struct_mutex);
 		atomic_dec(&dev->buf_alloc);
 		return -ENOMEM;
 	}
+	memset(entry->buflist, 0, count * sizeof(*entry->buflist));
 
-	entry->seglist = kzalloc(count * sizeof(*entry->seglist), GFP_KERNEL);
+	entry->seglist = kmalloc(count * sizeof(*entry->seglist), GFP_KERNEL);
 	if (!entry->seglist) {
 		kfree(entry->buflist);
 		mutex_unlock(&dev->struct_mutex);
 		atomic_dec(&dev->buf_alloc);
 		return -ENOMEM;
 	}
+	memset(entry->seglist, 0, count * sizeof(*entry->seglist));
 
 	/* Keep the original pagelist until we know all the allocations
 	 * have succeeded
@@ -906,8 +924,8 @@ int drm_addbufs_pci(struct drm_device * dev, struct drm_buf_desc * request)
 			buf->file_priv = NULL;
 
 			buf->dev_priv_size = dev->driver->dev_priv_size;
-			buf->dev_private = kzalloc(buf->dev_priv_size,
-						GFP_KERNEL);
+			buf->dev_private = kmalloc(buf->dev_priv_size,
+						  GFP_KERNEL);
 			if (!buf->dev_private) {
 				/* Set count correctly so we free the proper amount. */
 				entry->buf_count = count;
@@ -918,6 +936,7 @@ int drm_addbufs_pci(struct drm_device * dev, struct drm_buf_desc * request)
 				atomic_dec(&dev->buf_alloc);
 				return -ENOMEM;
 			}
+			memset(buf->dev_private, 0, buf->dev_priv_size);
 
 			DRM_DEBUG("buffer %d @ %p\n",
 				  entry->buf_count, buf->address);
@@ -1042,13 +1061,14 @@ static int drm_addbufs_sg(struct drm_device * dev, struct drm_buf_desc * request
 		return -EINVAL;
 	}
 
-	entry->buflist = kzalloc(count * sizeof(*entry->buflist),
+	entry->buflist = kmalloc(count * sizeof(*entry->buflist),
 				GFP_KERNEL);
 	if (!entry->buflist) {
 		mutex_unlock(&dev->struct_mutex);
 		atomic_dec(&dev->buf_alloc);
 		return -ENOMEM;
 	}
+	memset(entry->buflist, 0, count * sizeof(*entry->buflist));
 
 	entry->buf_size = size;
 	entry->page_order = page_order;
@@ -1073,7 +1093,7 @@ static int drm_addbufs_sg(struct drm_device * dev, struct drm_buf_desc * request
 		buf->file_priv = NULL;
 
 		buf->dev_priv_size = dev->driver->dev_priv_size;
-		buf->dev_private = kzalloc(buf->dev_priv_size, GFP_KERNEL);
+		buf->dev_private = kmalloc(buf->dev_priv_size, GFP_KERNEL);
 		if (!buf->dev_private) {
 			/* Set count correctly so we free the proper amount. */
 			entry->buf_count = count;
@@ -1082,6 +1102,8 @@ static int drm_addbufs_sg(struct drm_device * dev, struct drm_buf_desc * request
 			atomic_dec(&dev->buf_alloc);
 			return -ENOMEM;
 		}
+
+		memset(buf->dev_private, 0, buf->dev_priv_size);
 
 		DRM_DEBUG("buffer %d @ %p\n", entry->buf_count, buf->address);
 
@@ -1200,13 +1222,14 @@ static int drm_addbufs_fb(struct drm_device * dev, struct drm_buf_desc * request
 		return -EINVAL;
 	}
 
-	entry->buflist = kzalloc(count * sizeof(*entry->buflist),
+	entry->buflist = kmalloc(count * sizeof(*entry->buflist),
 				GFP_KERNEL);
 	if (!entry->buflist) {
 		mutex_unlock(&dev->struct_mutex);
 		atomic_dec(&dev->buf_alloc);
 		return -ENOMEM;
 	}
+	memset(entry->buflist, 0, count * sizeof(*entry->buflist));
 
 	entry->buf_size = size;
 	entry->page_order = page_order;
@@ -1230,7 +1253,7 @@ static int drm_addbufs_fb(struct drm_device * dev, struct drm_buf_desc * request
 		buf->file_priv = NULL;
 
 		buf->dev_priv_size = dev->driver->dev_priv_size;
-		buf->dev_private = kzalloc(buf->dev_priv_size, GFP_KERNEL);
+		buf->dev_private = kmalloc(buf->dev_priv_size, GFP_KERNEL);
 		if (!buf->dev_private) {
 			/* Set count correctly so we free the proper amount. */
 			entry->buf_count = count;
@@ -1239,6 +1262,7 @@ static int drm_addbufs_fb(struct drm_device * dev, struct drm_buf_desc * request
 			atomic_dec(&dev->buf_alloc);
 			return -ENOMEM;
 		}
+		memset(buf->dev_private, 0, buf->dev_priv_size);
 
 		DRM_DEBUG("buffer %d @ %p\n", entry->buf_count, buf->address);
 

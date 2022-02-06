@@ -202,7 +202,8 @@ static int nvhdmi_dig_playback_pcm_prepare_8ch_89(struct hda_pcm_stream *hinfo,
 
 	hdmi_setup_audio_infoframe(codec, hinfo->nid, substream);
 
-	return hdmi_setup_stream(codec, hinfo->nid, stream_tag, format);
+	hdmi_setup_stream(codec, hinfo->nid, stream_tag, format);
+	return 0;
 }
 
 static int nvhdmi_dig_playback_pcm_prepare_8ch(struct hda_pcm_stream *hinfo,

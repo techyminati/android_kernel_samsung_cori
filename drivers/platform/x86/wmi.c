@@ -518,13 +518,8 @@ static void wmi_notify_debug(u32 value, void *context)
 {
 	struct acpi_buffer response = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *obj;
-	acpi_status status;
 
-	status = wmi_get_event_data(value, &response);
-	if (status != AE_OK) {
-		printk(KERN_INFO "wmi: bad event status 0x%x\n", status);
-		return;
-	}
+	wmi_get_event_data(value, &response);
 
 	obj = (union acpi_object *)response.pointer;
 
@@ -548,7 +543,6 @@ static void wmi_notify_debug(u32 value, void *context)
 	default:
 		printk("object type 0x%X\n", obj->type);
 	}
-	kfree(obj);
 }
 
 /**
@@ -810,7 +804,7 @@ static bool guid_already_parsed(const char *guid_string)
 /*
  * Parse the _WDG method for the GUID data blocks
  */
-static acpi_status parse_wdg(acpi_handle handle)
+static __init acpi_status parse_wdg(acpi_handle handle)
 {
 	struct acpi_buffer out = {ACPI_ALLOCATE_BUFFER, NULL};
 	union acpi_object *obj;
@@ -833,10 +827,8 @@ static acpi_status parse_wdg(acpi_handle handle)
 	total = obj->buffer.length / sizeof(struct guid_block);
 
 	gblock = kmemdup(obj->buffer.pointer, obj->buffer.length, GFP_KERNEL);
-	if (!gblock) {
-		status = AE_NO_MEMORY;
-		goto out_free_pointer;
-	}
+	if (!gblock)
+		return AE_NO_MEMORY;
 
 	for (i = 0; i < total; i++) {
 		/*
@@ -856,10 +848,8 @@ static acpi_status parse_wdg(acpi_handle handle)
 			wmi_dump_wdg(&gblock[i]);
 
 		wblock = kzalloc(sizeof(struct wmi_block), GFP_KERNEL);
-		if (!wblock) {
-			status = AE_NO_MEMORY;
-			goto out_free_gblock;
-		}
+		if (!wblock)
+			return AE_NO_MEMORY;
 
 		wblock->gblock = gblock[i];
 		wblock->handle = handle;
@@ -870,10 +860,8 @@ static acpi_status parse_wdg(acpi_handle handle)
 		list_add_tail(&wblock->list, &wmi_blocks.list);
 	}
 
-out_free_gblock:
-	kfree(gblock);
-out_free_pointer:
 	kfree(out.pointer);
+	kfree(gblock);
 
 	return status;
 }
@@ -959,7 +947,7 @@ static int acpi_wmi_remove(struct acpi_device *device, int type)
 	return 0;
 }
 
-static int acpi_wmi_add(struct acpi_device *device)
+static int __init acpi_wmi_add(struct acpi_device *device)
 {
 	acpi_status status;
 	int result = 0;

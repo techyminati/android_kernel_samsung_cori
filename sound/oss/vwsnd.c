@@ -2429,7 +2429,8 @@ static unsigned int vwsnd_audio_poll(struct file *file,
 	return mask;
 }
 
-static int vwsnd_audio_do_ioctl(struct file *file,
+static int vwsnd_audio_do_ioctl(struct inode *inode,
+				struct file *file,
 				unsigned int cmd,
 				unsigned long arg)
 {
@@ -2445,8 +2446,8 @@ static int vwsnd_audio_do_ioctl(struct file *file,
 	int ival;
 
 	
-	DBGEV("(file=0x%p, cmd=0x%x, arg=0x%lx)\n",
-	      file, cmd, arg);
+	DBGEV("(inode=0x%p, file=0x%p, cmd=0x%x, arg=0x%lx)\n",
+	      inode, file, cmd, arg);
 	switch (cmd) {
 	case OSS_GETVERSION:		/* _SIOR ('M', 118, int) */
 		DBGX("OSS_GETVERSION\n");
@@ -2884,19 +2885,17 @@ static int vwsnd_audio_do_ioctl(struct file *file,
 	return -EINVAL;
 }
 
-static long vwsnd_audio_ioctl(struct file *file,
+static int vwsnd_audio_ioctl(struct inode *inode,
+				struct file *file,
 				unsigned int cmd,
 				unsigned long arg)
 {
 	vwsnd_dev_t *devc = (vwsnd_dev_t *) file->private_data;
 	int ret;
 
-	lock_kernel();
 	mutex_lock(&devc->io_mutex);
-	ret = vwsnd_audio_do_ioctl(file, cmd, arg);
+	ret = vwsnd_audio_do_ioctl(inode, file, cmd, arg);
 	mutex_unlock(&devc->io_mutex);
-	unlock_kernel();
-
 	return ret;
 }
 
@@ -2922,7 +2921,6 @@ static int vwsnd_audio_open(struct inode *inode, struct file *file)
 
 	DBGE("(inode=0x%p, file=0x%p)\n", inode, file);
 
-	lock_kernel();
 	INC_USE_COUNT;
 	for (devc = vwsnd_dev_list; devc; devc = devc->next_dev)
 		if ((devc->audio_minor & ~0x0F) == (minor & ~0x0F))
@@ -2930,7 +2928,6 @@ static int vwsnd_audio_open(struct inode *inode, struct file *file)
 
 	if (devc == NULL) {
 		DEC_USE_COUNT;
-		unlock_kernel();
 		return -ENODEV;
 	}
 
@@ -2939,13 +2936,11 @@ static int vwsnd_audio_open(struct inode *inode, struct file *file)
 		mutex_unlock(&devc->open_mutex);
 		if (file->f_flags & O_NONBLOCK) {
 			DEC_USE_COUNT;
-			unlock_kernel();
 			return -EBUSY;
 		}
 		interruptible_sleep_on(&devc->open_wait);
 		if (signal_pending(current)) {
 			DEC_USE_COUNT;
-			unlock_kernel();
 			return -ERESTARTSYS;
 		}
 		mutex_lock(&devc->open_mutex);
@@ -2998,7 +2993,6 @@ static int vwsnd_audio_open(struct inode *inode, struct file *file)
 
 	file->private_data = devc;
 	DBGRV();
-	unlock_kernel();
 	return 0;
 }
 
@@ -3050,7 +3044,7 @@ static const struct file_operations vwsnd_audio_fops = {
 	.read =		vwsnd_audio_read,
 	.write =	vwsnd_audio_write,
 	.poll =		vwsnd_audio_poll,
-	.unlocked_ioctl = vwsnd_audio_ioctl,
+	.ioctl =	vwsnd_audio_ioctl,
 	.mmap =		vwsnd_audio_mmap,
 	.open =		vwsnd_audio_open,
 	.release =	vwsnd_audio_release,
@@ -3068,18 +3062,15 @@ static int vwsnd_mixer_open(struct inode *inode, struct file *file)
 	DBGEV("(inode=0x%p, file=0x%p)\n", inode, file);
 
 	INC_USE_COUNT;
-	lock_kernel();
 	for (devc = vwsnd_dev_list; devc; devc = devc->next_dev)
 		if (devc->mixer_minor == iminor(inode))
 			break;
 
 	if (devc == NULL) {
 		DEC_USE_COUNT;
-		unlock_kernel();
 		return -ENODEV;
 	}
 	file->private_data = devc;
-	unlock_kernel();
 	return 0;
 }
 
@@ -3212,7 +3203,8 @@ static int mixer_write_ioctl(vwsnd_dev_t *devc, unsigned int nr, void __user *ar
 
 /* This is the ioctl entry to the mixer driver. */
 
-static long vwsnd_mixer_ioctl(struct file *file,
+static int vwsnd_mixer_ioctl(struct inode *ioctl,
+			      struct file *file,
 			      unsigned int cmd,
 			      unsigned long arg)
 {
@@ -3223,7 +3215,6 @@ static long vwsnd_mixer_ioctl(struct file *file,
 
 	DBGEV("(devc=0x%p, cmd=0x%x, arg=0x%lx)\n", devc, cmd, arg);
 
-	lock_kernel();
 	mutex_lock(&devc->mix_mutex);
 	{
 		if ((cmd & ~nrmask) == MIXER_READ(0))
@@ -3234,14 +3225,13 @@ static long vwsnd_mixer_ioctl(struct file *file,
 			retval = -EINVAL;
 	}
 	mutex_unlock(&devc->mix_mutex);
-	unlock_kernel();
 	return retval;
 }
 
 static const struct file_operations vwsnd_mixer_fops = {
 	.owner =	THIS_MODULE,
 	.llseek =	no_llseek,
-	.unlocked_ioctl = vwsnd_mixer_ioctl,
+	.ioctl =	vwsnd_mixer_ioctl,
 	.open =		vwsnd_mixer_open,
 	.release =	vwsnd_mixer_release,
 };

@@ -24,6 +24,11 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
+#if defined(CONFIG_SEC_DEBUG)
+/* For saving Fault status . */
+#include <mach/sec_debug.h>
+#endif
+
 #include "fault.h"
 
 /*
@@ -119,6 +124,7 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 { }
 #endif					/* CONFIG_MMU */
 
+
 /*
  * Oops.  The kernel tried to access some page that wasn't present.
  */
@@ -126,11 +132,17 @@ static void
 __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 		  struct pt_regs *regs)
 {
+
 	/*
 	 * Are we prepared to handle this kernel fault?
 	 */
 	if (fixup_exception(regs))
 		return;
+
+#if defined(CONFIG_SEC_DEBUG)
+/* For saving Fault status . */
+	sec_debug_save_pte((void *)regs, (int )current);
+#endif
 
 	/*
 	 * No handler, we'll have to terminate things with extreme prejudice.
@@ -157,6 +169,11 @@ __do_user_fault(struct task_struct *tsk, unsigned long addr,
 		struct pt_regs *regs)
 {
 	struct siginfo si;
+
+#if defined(CONFIG_SEC_DEBUG)
+/* For saving Fault status . */
+	sec_debug_save_pte((void *)regs, (int )current);
+#endif
 
 #ifdef CONFIG_DEBUG_USER
 	if (user_debug & UDBG_SEGV) {
@@ -413,16 +430,7 @@ do_translation_fault(unsigned long addr, unsigned int fsr,
 	pmd_k = pmd_offset(pgd_k, addr);
 	pmd   = pmd_offset(pgd, addr);
 
-	/*
-	 * On ARM one Linux PGD entry contains two hardware entries (see page
-	 * tables layout in pgtable.h). We normally guarantee that we always
-	 * fill both L1 entries. But create_mapping() doesn't follow the rule.
-	 * It can create inidividual L1 entries, so here we have to call
-	 * pmd_none() check for the entry really corresponded to address, not
-	 * for the first of pair.
-	 */
-	index = (addr >> SECTION_SHIFT) & 1;
-	if (pmd_none(pmd_k[index]))
+	if (pmd_none(*pmd_k))
 		goto bad_area;
 
 	copy_pmd(pmd, pmd_k);
@@ -472,10 +480,15 @@ static struct fsr_info {
 	 * defines these to be "precise" aborts.
 	 */
 	{ do_bad,		SIGSEGV, 0,		"vector exception"		   },
-	{ do_bad,		SIGBUS,	 BUS_ADRALN,	"alignment exception"		   },
+	{ do_bad,		SIGILL,	 BUS_ADRALN,	"alignment exception"		   },
 	{ do_bad,		SIGKILL, 0,		"terminal exception"		   },
-	{ do_bad,		SIGBUS,	 BUS_ADRALN,	"alignment exception"		   },
+	{ do_bad,		SIGILL,	 BUS_ADRALN,	"alignment exception"		   },
+/* Do we need runtime check ? */
+#if __LINUX_ARM_ARCH__ < 6
 	{ do_bad,		SIGBUS,	 0,		"external abort on linefetch"	   },
+#else
+	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"I-cache maintenance fault"	   },
+#endif
 	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"section translation fault"	   },
 	{ do_bad,		SIGBUS,	 0,		"external abort on linefetch"	   },
 	{ do_page_fault,	SIGSEGV, SEGV_MAPERR,	"page translation fault"	   },
@@ -512,15 +525,13 @@ static struct fsr_info {
 
 void __init
 hook_fault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *),
-		int sig, int code, const char *name)
+		int sig, const char *name)
 {
-	if (nr < 0 || nr >= ARRAY_SIZE(fsr_info))
-		BUG();
-
-	fsr_info[nr].fn   = fn;
-	fsr_info[nr].sig  = sig;
-	fsr_info[nr].code = code;
-	fsr_info[nr].name = name;
+	if (nr >= 0 && nr < ARRAY_SIZE(fsr_info)) {
+		fsr_info[nr].fn   = fn;
+		fsr_info[nr].sig  = sig;
+		fsr_info[nr].name = name;
+	}
 }
 
 /*
@@ -600,25 +611,3 @@ do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 	arm_notify_die("", regs, &info, ifsr, 0);
 }
 
-static int __init exceptions_init(void)
-{
-	if (cpu_architecture() >= CPU_ARCH_ARMv6) {
-		hook_fault_code(4, do_translation_fault, SIGSEGV, SEGV_MAPERR,
-				"I-cache maintenance fault");
-	}
-
-	if (cpu_architecture() >= CPU_ARCH_ARMv7) {
-		/*
-		 * TODO: Access flag faults introduced in ARMv6K.
-		 * Runtime check for 'K' extension is needed
-		 */
-		hook_fault_code(3, do_bad, SIGSEGV, SEGV_MAPERR,
-				"section access flag fault");
-		hook_fault_code(6, do_bad, SIGSEGV, SEGV_MAPERR,
-				"section access flag fault");
-	}
-
-	return 0;
-}
-
-arch_initcall(exceptions_init);

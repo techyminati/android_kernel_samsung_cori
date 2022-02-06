@@ -571,7 +571,7 @@ do_more:
 error_return:
 	brelse(bitmap_bh);
 	release_blocks(sb, freed);
-	dquot_free_block_nodirty(inode, freed);
+	dquot_free_block(inode, freed);
 }
 
 /**
@@ -1418,8 +1418,7 @@ allocated:
 
 	*errp = 0;
 	brelse(bitmap_bh);
-	dquot_free_block_nodirty(inode, *count-num);
-	mark_inode_dirty(inode);
+	dquot_free_block(inode, *count-num);
 	*count = num;
 	return ret_block;
 
@@ -1429,10 +1428,8 @@ out:
 	/*
 	 * Undo the block allocation
 	 */
-	if (!performed_allocation) {
-		dquot_free_block_nodirty(inode, *count);
-		mark_inode_dirty(inode);
-	}
+	if (!performed_allocation)
+		dquot_free_block(inode, *count);
 	brelse(bitmap_bh);
 	return 0;
 }

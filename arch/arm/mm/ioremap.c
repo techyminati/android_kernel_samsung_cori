@@ -42,11 +42,78 @@
  */
 #define VM_ARM_SECTION_MAPPING	0x80000000
 
+static int remap_area_pte(pmd_t *pmd, unsigned long addr, unsigned long end,
+			  unsigned long phys_addr, const struct mem_type *type)
+{
+	pgprot_t prot = __pgprot(type->prot_pte);
+	pte_t *pte;
+
+	pte = pte_alloc_kernel(pmd, addr);
+	if (!pte)
+		return -ENOMEM;
+
+	do {
+		if (!pte_none(*pte))
+			goto bad;
+
+		set_pte_ext(pte, pfn_pte(phys_addr >> PAGE_SHIFT, prot), 0);
+		phys_addr += PAGE_SIZE;
+	} while (pte++, addr += PAGE_SIZE, addr != end);
+	return 0;
+
+ bad:
+	printk(KERN_CRIT "remap_area_pte: page already exists\n");
+	BUG();
+}
+
+static inline int remap_area_pmd(pgd_t *pgd, unsigned long addr,
+				 unsigned long end, unsigned long phys_addr,
+				 const struct mem_type *type)
+{
+	unsigned long next;
+	pmd_t *pmd;
+	int ret = 0;
+
+	pmd = pmd_alloc(&init_mm, pgd, addr);
+	if (!pmd)
+		return -ENOMEM;
+
+	do {
+		next = pmd_addr_end(addr, end);
+		ret = remap_area_pte(pmd, addr, next, phys_addr, type);
+		if (ret)
+			return ret;
+		phys_addr += next - addr;
+	} while (pmd++, addr = next, addr != end);
+	return ret;
+}
+
+static int remap_area_pages(unsigned long start, unsigned long pfn,
+			    size_t size, const struct mem_type *type)
+{
+	unsigned long addr = start;
+	unsigned long next, end = start + size;
+	unsigned long phys_addr = __pfn_to_phys(pfn);
+	pgd_t *pgd;
+	int err = 0;
+
+	BUG_ON(addr >= end);
+	pgd = pgd_offset_k(addr);
+	do {
+		next = pgd_addr_end(addr, end);
+		err = remap_area_pmd(pgd, addr, next, phys_addr, type);
+		if (err)
+			break;
+		phys_addr += next - addr;
+	} while (pgd++, addr = next, addr != end);
+
+	return err;
+}
+
 int ioremap_page(unsigned long virt, unsigned long phys,
 		 const struct mem_type *mtype)
 {
-	return ioremap_page_range(virt, virt + PAGE_SIZE, phys,
-				  __pgprot(mtype->prot_pte));
+	return remap_area_pages(virt, __phys_to_pfn(phys), PAGE_SIZE, mtype);
 }
 EXPORT_SYMBOL(ioremap_page);
 
@@ -201,12 +268,6 @@ void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
 	if (pfn >= 0x100000 && (__pfn_to_phys(pfn) & ~SUPERSECTION_MASK))
 		return NULL;
 
-	/*
-	 * Don't allow RAM to be mapped - this causes problems with ARMv6+
-	 */
-	if (WARN_ON(pfn_valid(pfn)))
-		return NULL;
-
 	type = get_mem_type(mtype);
 	if (!type)
 		return NULL;
@@ -233,8 +294,7 @@ void __iomem * __arm_ioremap_pfn_caller(unsigned long pfn,
 		err = remap_area_sections(addr, pfn, size, type);
 	} else
 #endif
-		err = ioremap_page_range(addr, addr + size, __pfn_to_phys(pfn),
-					 __pgprot(type->prot_pte));
+		err = remap_area_pages(addr, pfn, size, type);
 
 	if (err) {
  		vunmap((void *)addr);

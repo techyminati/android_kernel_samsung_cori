@@ -170,11 +170,8 @@ int conf_read_simple(const char *name, int def)
 		if (in)
 			goto load;
 		sym_add_change_count(1);
-		if (!sym_defconfig_list) {
-			if (modules_sym)
-				sym_calc_value(modules_sym);
+		if (!sym_defconfig_list)
 			return 1;
-		}
 
 		for_all_defaults(sym_defconfig_list, prop) {
 			if (expr_calc_value(prop->visible.expr) == no ||
@@ -399,148 +396,15 @@ int conf_read(const char *name)
 	return 0;
 }
 
-/* Write a S_STRING */
-static void conf_write_string(bool headerfile, const char *name,
-                              const char *str, FILE *out)
-{
-	int l;
-	if (headerfile)
-		fprintf(out, "#define CONFIG_%s \"", name);
-	else
-		fprintf(out, "CONFIG_%s=\"", name);
-
-	while (1) {
-		l = strcspn(str, "\"\\");
-		if (l) {
-			xfwrite(str, l, 1, out);
-			str += l;
-		}
-		if (!*str)
-			break;
-		fprintf(out, "\\%c", *str++);
-	}
-	fputs("\"\n", out);
-}
-
-static void conf_write_symbol(struct symbol *sym, enum symbol_type type,
-                              FILE *out, bool write_no)
-{
-	const char *str;
-
-	switch (type) {
-	case S_BOOLEAN:
-	case S_TRISTATE:
-		switch (sym_get_tristate_value(sym)) {
-		case no:
-			if (write_no)
-				fprintf(out, "# CONFIG_%s is not set\n", sym->name);
-			break;
-		case mod:
-			fprintf(out, "CONFIG_%s=m\n", sym->name);
-			break;
-		case yes:
-			fprintf(out, "CONFIG_%s=y\n", sym->name);
-			break;
-		}
-		break;
-	case S_STRING:
-		conf_write_string(false, sym->name, sym_get_string_value(sym), out);
-		break;
-	case S_HEX:
-	case S_INT:
-		str = sym_get_string_value(sym);
-		fprintf(out, "CONFIG_%s=%s\n", sym->name, str);
-		break;
-	case S_OTHER:
-	case S_UNKNOWN:
-		break;
-	}
-}
-
-/*
- * Write out a minimal config.
- * All values that has default values are skipped as this is redundant.
- */
-int conf_write_defconfig(const char *filename)
-{
-	struct symbol *sym;
-	struct menu *menu;
-	FILE *out;
-
-	out = fopen(filename, "w");
-	if (!out)
-		return 1;
-
-	sym_clear_all_valid();
-
-	/* Traverse all menus to find all relevant symbols */
-	menu = rootmenu.list;
-
-	while (menu != NULL)
-	{
-		sym = menu->sym;
-		if (sym == NULL) {
-			if (!menu_is_visible(menu))
-				goto next_menu;
-		} else if (!sym_is_choice(sym)) {
-			sym_calc_value(sym);
-			if (!(sym->flags & SYMBOL_WRITE))
-				goto next_menu;
-			sym->flags &= ~SYMBOL_WRITE;
-			/* If we cannot change the symbol - skip */
-			if (!sym_is_changable(sym))
-				goto next_menu;
-			/* If symbol equals to default value - skip */
-			if (strcmp(sym_get_string_value(sym), sym_get_string_default(sym)) == 0)
-				goto next_menu;
-
-			/*
-			 * If symbol is a choice value and equals to the
-			 * default for a choice - skip.
-			 * But only if value is bool and equal to "y" .
-			 */
-			if (sym_is_choice_value(sym)) {
-				struct symbol *cs;
-				struct symbol *ds;
-
-				cs = prop_get_symbol(sym_get_choice_prop(sym));
-				ds = sym_choice_default(cs);
-				if (sym == ds) {
-					if ((sym->type == S_BOOLEAN) &&
-					    sym_get_tristate_value(sym) == yes)
-						goto next_menu;
-				}
-			}
-			conf_write_symbol(sym, sym->type, out, true);
-		}
-next_menu:
-		if (menu->list != NULL) {
-			menu = menu->list;
-		}
-		else if (menu->next != NULL) {
-			menu = menu->next;
-		} else {
-			while ((menu = menu->parent)) {
-				if (menu->next != NULL) {
-					menu = menu->next;
-					break;
-				}
-			}
-		}
-	}
-	fclose(out);
-	return 0;
-}
-
 int conf_write(const char *name)
 {
 	FILE *out;
 	struct symbol *sym;
 	struct menu *menu;
 	const char *basename;
-	const char *str;
 	char dirname[128], tmpname[128], newname[128];
-	enum symbol_type type;
+	int type, l;
+	const char *str;
 	time_t now;
 	int use_timestamp = 1;
 	char *env;
@@ -620,11 +484,50 @@ int conf_write(const char *name)
 				if (modules_sym->curr.tri == no)
 					type = S_BOOLEAN;
 			}
-			/* Write config symbol to file */
-			conf_write_symbol(sym, type, out, true);
+			switch (type) {
+			case S_BOOLEAN:
+			case S_TRISTATE:
+				switch (sym_get_tristate_value(sym)) {
+				case no:
+					fprintf(out, "# CONFIG_%s is not set\n", sym->name);
+					break;
+				case mod:
+					fprintf(out, "CONFIG_%s=m\n", sym->name);
+					break;
+				case yes:
+					fprintf(out, "CONFIG_%s=y\n", sym->name);
+					break;
+				}
+				break;
+			case S_STRING:
+				str = sym_get_string_value(sym);
+				fprintf(out, "CONFIG_%s=\"", sym->name);
+				while (1) {
+					l = strcspn(str, "\"\\");
+					if (l) {
+						fwrite(str, l, 1, out);
+						str += l;
+					}
+					if (!*str)
+						break;
+					fprintf(out, "\\%c", *str++);
+				}
+				fputs("\"\n", out);
+				break;
+			case S_HEX:
+				str = sym_get_string_value(sym);
+				if (str[0] != '0' || (str[1] != 'x' && str[1] != 'X')) {
+					fprintf(out, "CONFIG_%s=%s\n", sym->name, str);
+					break;
+				}
+			case S_INT:
+				str = sym_get_string_value(sym);
+				fprintf(out, "CONFIG_%s=%s\n", sym->name, str);
+				break;
+			}
 		}
 
-next:
+	next:
 		if (menu->list) {
 			menu = menu->list;
 			continue;
@@ -776,7 +679,7 @@ int conf_write_autoconf(void)
 	const char *name;
 	FILE *out, *tristate, *out_h;
 	time_t now;
-	int i;
+	int i, l;
 
 	sym_clear_all_valid();
 
@@ -826,11 +729,6 @@ int conf_write_autoconf(void)
 		sym_calc_value(sym);
 		if (!(sym->flags & SYMBOL_WRITE) || !sym->name)
 			continue;
-
-		/* write symbol to config file */
-		conf_write_symbol(sym, sym->type, out, false);
-
-		/* update autoconf and tristate files */
 		switch (sym->type) {
 		case S_BOOLEAN:
 		case S_TRISTATE:
@@ -838,10 +736,12 @@ int conf_write_autoconf(void)
 			case no:
 				break;
 			case mod:
+				fprintf(out, "CONFIG_%s=m\n", sym->name);
 				fprintf(tristate, "CONFIG_%s=M\n", sym->name);
 				fprintf(out_h, "#define CONFIG_%s_MODULE 1\n", sym->name);
 				break;
 			case yes:
+				fprintf(out, "CONFIG_%s=y\n", sym->name);
 				if (sym->type == S_TRISTATE)
 					fprintf(tristate, "CONFIG_%s=Y\n",
 							sym->name);
@@ -850,16 +750,35 @@ int conf_write_autoconf(void)
 			}
 			break;
 		case S_STRING:
-			conf_write_string(true, sym->name, sym_get_string_value(sym), out_h);
+			str = sym_get_string_value(sym);
+			fprintf(out, "CONFIG_%s=\"", sym->name);
+			fprintf(out_h, "#define CONFIG_%s \"", sym->name);
+			while (1) {
+				l = strcspn(str, "\"\\");
+				if (l) {
+					fwrite(str, l, 1, out);
+					fwrite(str, l, 1, out_h);
+					str += l;
+				}
+				if (!*str)
+					break;
+				fprintf(out, "\\%c", *str);
+				fprintf(out_h, "\\%c", *str);
+				str++;
+			}
+			fputs("\"\n", out);
+			fputs("\"\n", out_h);
 			break;
 		case S_HEX:
 			str = sym_get_string_value(sym);
 			if (str[0] != '0' || (str[1] != 'x' && str[1] != 'X')) {
+				fprintf(out, "CONFIG_%s=%s\n", sym->name, str);
 				fprintf(out_h, "#define CONFIG_%s 0x%s\n", sym->name, str);
 				break;
 			}
 		case S_INT:
 			str = sym_get_string_value(sym);
+			fprintf(out, "CONFIG_%s=%s\n", sym->name, str);
 			fprintf(out_h, "#define CONFIG_%s %s\n", sym->name, str);
 			break;
 		default:
@@ -918,73 +837,13 @@ void conf_set_changed_callback(void (*fn)(void))
 	conf_changed_callback = fn;
 }
 
-static void randomize_choice_values(struct symbol *csym)
-{
-	struct property *prop;
-	struct symbol *sym;
-	struct expr *e;
-	int cnt, def;
-
-	/*
-	 * If choice is mod then we may have more items slected
-	 * and if no then no-one.
-	 * In both cases stop.
-	 */
-	if (csym->curr.tri != yes)
-		return;
-
-	prop = sym_get_choice_prop(csym);
-
-	/* count entries in choice block */
-	cnt = 0;
-	expr_list_for_each_sym(prop->expr, e, sym)
-		cnt++;
-
-	/*
-	 * find a random value and set it to yes,
-	 * set the rest to no so we have only one set
-	 */
-	def = (rand() % cnt);
-
-	cnt = 0;
-	expr_list_for_each_sym(prop->expr, e, sym) {
-		if (def == cnt++) {
-			sym->def[S_DEF_USER].tri = yes;
-			csym->def[S_DEF_USER].val = sym;
-		}
-		else {
-			sym->def[S_DEF_USER].tri = no;
-		}
-	}
-	csym->flags |= SYMBOL_DEF_USER;
-	/* clear VALID to get value calculated */
-	csym->flags &= ~(SYMBOL_VALID);
-}
-
-static void set_all_choice_values(struct symbol *csym)
-{
-	struct property *prop;
-	struct symbol *sym;
-	struct expr *e;
-
-	prop = sym_get_choice_prop(csym);
-
-	/*
-	 * Set all non-assinged choice values to no
-	 */
-	expr_list_for_each_sym(prop->expr, e, sym) {
-		if (!sym_has_value(sym))
-			sym->def[S_DEF_USER].tri = no;
-	}
-	csym->flags |= SYMBOL_DEF_USER;
-	/* clear VALID to get value calculated */
-	csym->flags &= ~(SYMBOL_VALID);
-}
 
 void conf_set_all_new_symbols(enum conf_def_mode mode)
 {
 	struct symbol *sym, *csym;
-	int i, cnt;
+	struct property *prop;
+	struct expr *e;
+	int i, cnt, def;
 
 	for_all_symbols(i, sym) {
 		if (sym_has_value(sym))
@@ -1003,8 +862,7 @@ void conf_set_all_new_symbols(enum conf_def_mode mode)
 				sym->def[S_DEF_USER].tri = no;
 				break;
 			case def_random:
-				cnt = sym_get_type(sym) == S_TRISTATE ? 3 : 2;
-				sym->def[S_DEF_USER].tri = (tristate)(rand() % cnt);
+				sym->def[S_DEF_USER].tri = (tristate)(rand() % 3);
 				break;
 			default:
 				continue;
@@ -1020,6 +878,8 @@ void conf_set_all_new_symbols(enum conf_def_mode mode)
 
 	sym_clear_all_valid();
 
+	if (mode != def_random)
+		return;
 	/*
 	 * We have different type of choice blocks.
 	 * If curr.tri equal to mod then we can select several
@@ -1034,9 +894,35 @@ void conf_set_all_new_symbols(enum conf_def_mode mode)
 			continue;
 
 		sym_calc_value(csym);
-		if (mode == def_random)
-			randomize_choice_values(csym);
-		else
-			set_all_choice_values(csym);
+
+		if (csym->curr.tri != yes)
+			continue;
+
+		prop = sym_get_choice_prop(csym);
+
+		/* count entries in choice block */
+		cnt = 0;
+		expr_list_for_each_sym(prop->expr, e, sym)
+			cnt++;
+
+		/*
+		 * find a random value and set it to yes,
+		 * set the rest to no so we have only one set
+		 */
+		def = (rand() % cnt);
+
+		cnt = 0;
+		expr_list_for_each_sym(prop->expr, e, sym) {
+			if (def == cnt++) {
+				sym->def[S_DEF_USER].tri = yes;
+				csym->def[S_DEF_USER].val = sym;
+			}
+			else {
+				sym->def[S_DEF_USER].tri = no;
+			}
+		}
+		csym->flags |= SYMBOL_DEF_USER;
+		/* clear VALID to get value calculated */
+		csym->flags &= ~(SYMBOL_VALID);
 	}
 }

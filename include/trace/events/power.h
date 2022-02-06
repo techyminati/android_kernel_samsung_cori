@@ -18,55 +18,52 @@ enum {
 
 DECLARE_EVENT_CLASS(power,
 
-	TP_PROTO(unsigned int type, unsigned int state, unsigned int cpu_id),
+	TP_PROTO(unsigned int type, unsigned int state),
 
-	TP_ARGS(type, state, cpu_id),
+	TP_ARGS(type, state),
 
 	TP_STRUCT__entry(
 		__field(	u64,		type		)
 		__field(	u64,		state		)
-		__field(	u64,		cpu_id		)
 	),
 
 	TP_fast_assign(
 		__entry->type = type;
 		__entry->state = state;
-		__entry->cpu_id = cpu_id;
 	),
 
-	TP_printk("type=%lu state=%lu cpu_id=%lu", (unsigned long)__entry->type,
-		(unsigned long)__entry->state, (unsigned long)__entry->cpu_id)
+	TP_printk("type=%lu state=%lu", (unsigned long)__entry->type, (unsigned long)__entry->state)
 );
 
 DEFINE_EVENT(power, power_start,
 
-	TP_PROTO(unsigned int type, unsigned int state, unsigned int cpu_id),
+	TP_PROTO(unsigned int type, unsigned int state),
 
-	TP_ARGS(type, state, cpu_id)
+	TP_ARGS(type, state)
 );
 
 DEFINE_EVENT(power, power_frequency,
 
-	TP_PROTO(unsigned int type, unsigned int state, unsigned int cpu_id),
+	TP_PROTO(unsigned int type, unsigned int state),
 
-	TP_ARGS(type, state, cpu_id)
+	TP_ARGS(type, state)
 );
 
 TRACE_EVENT(power_end,
 
-	TP_PROTO(unsigned int cpu_id),
+	TP_PROTO(int dummy),
 
-	TP_ARGS(cpu_id),
+	TP_ARGS(dummy),
 
 	TP_STRUCT__entry(
-		__field(	u64,		cpu_id		)
+		__field(	u64,		dummy		)
 	),
 
 	TP_fast_assign(
-		__entry->cpu_id = cpu_id;
+		__entry->dummy = 0xffff;
 	),
 
-	TP_printk("cpu_id=%lu", (unsigned long)__entry->cpu_id)
+	TP_printk("dummy=%lu", (unsigned long)__entry->dummy)
 
 );
 

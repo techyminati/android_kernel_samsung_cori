@@ -24,8 +24,6 @@
 #ifndef _SS_POLICYDB_H_
 #define _SS_POLICYDB_H_
 
-#include <linux/flex_array.h>
-
 #include "symtab.h"
 #include "avtab.h"
 #include "sidtab.h"
@@ -248,7 +246,7 @@ struct policydb {
 	struct hashtab *range_tr;
 
 	/* type -> attribute reverse mapping */
-	struct flex_array *type_attr_map_array;
+	struct ebitmap *type_attr_map;
 
 	struct ebitmap policycaps;
 

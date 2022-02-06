@@ -121,17 +121,11 @@ long asihpi_hpi_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	phpi_ioctl_data = (struct hpi_ioctl_linux __user *)arg;
 
 	/* Read the message and response pointers from user space.  */
-	if (get_user(puhm, &phpi_ioctl_data->phm) ||
-	    get_user(puhr, &phpi_ioctl_data->phr)) {
-		err = -EFAULT;
-		goto out;
-	}
+	get_user(puhm, &phpi_ioctl_data->phm);
+	get_user(puhr, &phpi_ioctl_data->phr);
 
 	/* Now read the message size and data from user space.  */
-	if (get_user(hm->h.size, (u16 __user *)puhm)) {
-		err = -EFAULT;
-		goto out;
-	}
+	get_user(hm->h.size, (u16 __user *)puhm);
 	if (hm->h.size > sizeof(*hm))
 		hm->h.size = sizeof(*hm);
 
@@ -144,10 +138,7 @@ long asihpi_hpi_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		goto out;
 	}
 
-	if (get_user(res_max_size, (u16 __user *)puhr)) {
-		err = -EFAULT;
-		goto out;
-	}
+	get_user(res_max_size, (u16 __user *)puhr);
 	/* printk(KERN_INFO "user response size %d\n", res_max_size); */
 	if (res_max_size < sizeof(struct hpi_response_header)) {
 		HPI_DEBUG_LOG(WARNING, "small res size %d\n", res_max_size);
@@ -473,7 +464,9 @@ void __init asihpi_init(void)
 
 	memset(adapters, 0, sizeof(adapters));
 
-	printk(KERN_INFO "ASIHPI driver " HPI_VER_STRING "\n");
+	printk(KERN_INFO "ASIHPI driver %d.%02d.%02d\n",
+		HPI_VER_MAJOR(HPI_VER), HPI_VER_MINOR(HPI_VER),
+		HPI_VER_RELEASE(HPI_VER));
 
 	hpi_init_message_response(&hm, &hr, HPI_OBJ_SUBSYSTEM,
 		HPI_SUBSYS_DRIVER_LOAD);

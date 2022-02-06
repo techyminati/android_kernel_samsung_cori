@@ -1047,6 +1047,8 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
 	int i;
 
+	vcpu_load(vcpu);
+
 	regs->pc = kvmppc_get_pc(vcpu);
 	regs->cr = kvmppc_get_cr(vcpu);
 	regs->ctr = kvmppc_get_ctr(vcpu);
@@ -1067,12 +1069,16 @@ int kvm_arch_vcpu_ioctl_get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	for (i = 0; i < ARRAY_SIZE(regs->gpr); i++)
 		regs->gpr[i] = kvmppc_get_gpr(vcpu, i);
 
+	vcpu_put(vcpu);
+
 	return 0;
 }
 
 int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
 	int i;
+
+	vcpu_load(vcpu);
 
 	kvmppc_set_pc(vcpu, regs->pc);
 	kvmppc_set_cr(vcpu, regs->cr);
@@ -1093,6 +1099,8 @@ int kvm_arch_vcpu_ioctl_set_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 	for (i = 0; i < ARRAY_SIZE(regs->gpr); i++)
 		kvmppc_set_gpr(vcpu, i, regs->gpr[i]);
 
+	vcpu_put(vcpu);
+
 	return 0;
 }
 
@@ -1101,6 +1109,8 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
 {
 	struct kvmppc_vcpu_book3s *vcpu3s = to_book3s(vcpu);
 	int i;
+
+	vcpu_load(vcpu);
 
 	sregs->pvr = vcpu->arch.pvr;
 
@@ -1121,6 +1131,8 @@ int kvm_arch_vcpu_ioctl_get_sregs(struct kvm_vcpu *vcpu,
 		}
 	}
 
+	vcpu_put(vcpu);
+
 	return 0;
 }
 
@@ -1129,6 +1141,8 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 {
 	struct kvmppc_vcpu_book3s *vcpu3s = to_book3s(vcpu);
 	int i;
+
+	vcpu_load(vcpu);
 
 	kvmppc_set_pvr(vcpu, sregs->pvr);
 
@@ -1156,6 +1170,8 @@ int kvm_arch_vcpu_ioctl_set_sregs(struct kvm_vcpu *vcpu,
 
 	/* Flush the MMU after messing with the segments */
 	kvmppc_mmu_pte_flush(vcpu, 0, 0);
+
+	vcpu_put(vcpu);
 
 	return 0;
 }
@@ -1293,17 +1309,12 @@ extern int __kvmppc_vcpu_entry(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu);
 int __kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 {
 	int ret;
-	double fpr[32][TS_FPRWIDTH];
-	unsigned int fpscr;
-	int fpexc_mode;
+	struct thread_struct ext_bkp;
 #ifdef CONFIG_ALTIVEC
-	vector128 vr[32];
-	vector128 vscr;
-	unsigned long uninitialized_var(vrsave);
-	int used_vr;
+	bool save_vec = current->thread.used_vr;
 #endif
 #ifdef CONFIG_VSX
-	int used_vsr;
+	bool save_vsx = current->thread.used_vsr;
 #endif
 	ulong ext_msr;
 
@@ -1316,27 +1327,27 @@ int __kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 	/* Save FPU state in stack */
 	if (current->thread.regs->msr & MSR_FP)
 		giveup_fpu(current);
-	memcpy(fpr, current->thread.fpr, sizeof(current->thread.fpr));
-	fpscr = current->thread.fpscr.val;
-	fpexc_mode = current->thread.fpexc_mode;
+	memcpy(ext_bkp.fpr, current->thread.fpr, sizeof(current->thread.fpr));
+	ext_bkp.fpscr = current->thread.fpscr;
+	ext_bkp.fpexc_mode = current->thread.fpexc_mode;
 
 #ifdef CONFIG_ALTIVEC
 	/* Save Altivec state in stack */
-	used_vr = current->thread.used_vr;
-	if (used_vr) {
+	if (save_vec) {
 		if (current->thread.regs->msr & MSR_VEC)
 			giveup_altivec(current);
-		memcpy(vr, current->thread.vr, sizeof(current->thread.vr));
-		vscr = current->thread.vscr;
-		vrsave = current->thread.vrsave;
+		memcpy(ext_bkp.vr, current->thread.vr, sizeof(ext_bkp.vr));
+		ext_bkp.vscr = current->thread.vscr;
+		ext_bkp.vrsave = current->thread.vrsave;
 	}
+	ext_bkp.used_vr = current->thread.used_vr;
 #endif
 
 #ifdef CONFIG_VSX
 	/* Save VSX state in stack */
-	used_vsr = current->thread.used_vsr;
-	if (used_vsr && (current->thread.regs->msr & MSR_VSX))
+	if (save_vsx && (current->thread.regs->msr & MSR_VSX))
 			__giveup_vsx(current);
+	ext_bkp.used_vsr = current->thread.used_vsr;
 #endif
 
 	/* Remember the MSR with disabled extensions */
@@ -1361,22 +1372,22 @@ int __kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 	kvmppc_giveup_ext(vcpu, MSR_VSX);
 
 	/* Restore FPU state from stack */
-	memcpy(current->thread.fpr, fpr, sizeof(current->thread.fpr));
-	current->thread.fpscr.val = fpscr;
-	current->thread.fpexc_mode = fpexc_mode;
+	memcpy(current->thread.fpr, ext_bkp.fpr, sizeof(ext_bkp.fpr));
+	current->thread.fpscr = ext_bkp.fpscr;
+	current->thread.fpexc_mode = ext_bkp.fpexc_mode;
 
 #ifdef CONFIG_ALTIVEC
 	/* Restore Altivec state from stack */
-	if (used_vr && current->thread.used_vr) {
-		memcpy(current->thread.vr, vr, sizeof(current->thread.vr));
-		current->thread.vscr = vscr;
-		current->thread.vrsave = vrsave;
+	if (save_vec && current->thread.used_vr) {
+		memcpy(current->thread.vr, ext_bkp.vr, sizeof(ext_bkp.vr));
+		current->thread.vscr = ext_bkp.vscr;
+		current->thread.vrsave= ext_bkp.vrsave;
 	}
-	current->thread.used_vr = used_vr;
+	current->thread.used_vr = ext_bkp.used_vr;
 #endif
 
 #ifdef CONFIG_VSX
-	current->thread.used_vsr = used_vsr;
+	current->thread.used_vsr = ext_bkp.used_vsr;
 #endif
 
 	return ret;
@@ -1384,22 +1395,12 @@ int __kvmppc_vcpu_run(struct kvm_run *kvm_run, struct kvm_vcpu *vcpu)
 
 static int kvmppc_book3s_init(void)
 {
-	int r;
-
-	r = kvm_init(NULL, sizeof(struct kvmppc_vcpu_book3s), 0,
-		     THIS_MODULE);
-
-	if (r)
-		return r;
-
-	r = kvmppc_mmu_hpte_sysinit();
-
-	return r;
+	return kvm_init(NULL, sizeof(struct kvmppc_vcpu_book3s), 0,
+			THIS_MODULE);
 }
 
 static void kvmppc_book3s_exit(void)
 {
-	kvmppc_mmu_hpte_sysexit();
 	kvm_exit();
 }
 

@@ -1,5 +1,5 @@
-#ifndef CEPH_CRUSH_HASH_H
-#define CEPH_CRUSH_HASH_H
+#ifndef _CRUSH_HASH_H
+#define _CRUSH_HASH_H
 
 #define CRUSH_HASH_RJENKINS1   0
 

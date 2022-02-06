@@ -391,7 +391,7 @@ struct zoran {
 
 	struct mutex resource_lock;	/* prevent evil stuff */
 
-	u8 initialized;		/* flag if zoran has been correctly initialized */
+	u8 initialized;		/* flag if zoran has been correctly initalized */
 	int user;		/* number of current users */
 	struct card_info card;
 	struct tvnorm *timing;

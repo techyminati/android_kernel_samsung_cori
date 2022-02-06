@@ -545,28 +545,74 @@ struct device_node *of_find_matching_node(struct device_node *from,
 EXPORT_SYMBOL(of_find_matching_node);
 
 /**
+ * of_modalias_table: Table of explicit compatible ==> modalias mappings
+ *
+ * This table allows particulare compatible property values to be mapped
+ * to modalias strings.  This is useful for busses which do not directly
+ * understand the OF device tree but are populated based on data contained
+ * within the device tree.  SPI and I2C are the two current users of this
+ * table.
+ *
+ * In most cases, devices do not need to be listed in this table because
+ * the modalias value can be derived directly from the compatible table.
+ * However, if for any reason a value cannot be derived, then this table
+ * provides a method to override the implicit derivation.
+ *
+ * At the moment, a single table is used for all bus types because it is
+ * assumed that the data size is small and that the compatible values
+ * should already be distinct enough to differentiate between SPI, I2C
+ * and other devices.
+ */
+struct of_modalias_table {
+	char *of_device;
+	char *modalias;
+};
+static struct of_modalias_table of_modalias_table[] = {
+	{ "fsl,mcu-mpc8349emitx", "mcu-mpc8349emitx" },
+	{ "mmc-spi-slot", "mmc_spi" },
+};
+
+/**
  * of_modalias_node - Lookup appropriate modalias for a device node
  * @node:	pointer to a device tree node
  * @modalias:	Pointer to buffer that modalias value will be copied into
  * @len:	Length of modalias value
  *
- * Based on the value of the compatible property, this routine will attempt
- * to choose an appropriate modalias value for a particular device tree node.
- * It does this by stripping the manufacturer prefix (as delimited by a ',')
- * from the first entry in the compatible list property.
+ * Based on the value of the compatible property, this routine will determine
+ * an appropriate modalias value for a particular device tree node.  Two
+ * separate methods are attempted to derive a modalias value.
  *
- * This routine returns 0 on success, <0 on failure.
+ * First method is to lookup the compatible value in of_modalias_table.
+ * Second is to strip off the manufacturer prefix from the first
+ * compatible entry and use the remainder as modalias
+ *
+ * This routine returns 0 on success
  */
 int of_modalias_node(struct device_node *node, char *modalias, int len)
 {
-	const char *compatible, *p;
-	int cplen;
+	int i, cplen;
+	const char *compatible;
+	const char *p;
+
+	/* 1. search for exception list entry */
+	for (i = 0; i < ARRAY_SIZE(of_modalias_table); i++) {
+		compatible = of_modalias_table[i].of_device;
+		if (!of_device_is_compatible(node, compatible))
+			continue;
+		strlcpy(modalias, of_modalias_table[i].modalias, len);
+		return 0;
+	}
 
 	compatible = of_get_property(node, "compatible", &cplen);
-	if (!compatible || strlen(compatible) > cplen)
+	if (!compatible)
 		return -ENODEV;
+
+	/* 2. take first compatible entry and strip manufacturer */
 	p = strchr(compatible, ',');
-	strlcpy(modalias, p ? p + 1 : compatible, len);
+	if (!p)
+		return -ENODEV;
+	p++;
+	strlcpy(modalias, p, len);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(of_modalias_node);
@@ -605,14 +651,14 @@ EXPORT_SYMBOL(of_find_node_by_phandle);
 struct device_node *
 of_parse_phandle(struct device_node *np, const char *phandle_name, int index)
 {
-	const __be32 *phandle;
+	const phandle *phandle;
 	int size;
 
 	phandle = of_get_property(np, phandle_name, &size);
 	if ((!phandle) || (size < sizeof(*phandle) * (index + 1)))
 		return NULL;
 
-	return of_find_node_by_phandle(be32_to_cpup(phandle + index));
+	return of_find_node_by_phandle(phandle[index]);
 }
 EXPORT_SYMBOL(of_parse_phandle);
 
@@ -668,16 +714,16 @@ int of_parse_phandles_with_args(struct device_node *np, const char *list_name,
 
 	while (list < list_end) {
 		const __be32 *cells;
-		phandle phandle;
+		const phandle *phandle;
 
-		phandle = be32_to_cpup(list++);
+		phandle = list++;
 		args = list;
 
 		/* one cell hole in the list = <>; */
-		if (!phandle)
+		if (!*phandle)
 			goto next;
 
-		node = of_find_node_by_phandle(phandle);
+		node = of_find_node_by_phandle(*phandle);
 		if (!node) {
 			pr_debug("%s: could not find phandle\n",
 				 np->full_name);

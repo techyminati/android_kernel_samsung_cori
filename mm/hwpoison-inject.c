@@ -5,7 +5,6 @@
 #include <linux/mm.h>
 #include <linux/swap.h>
 #include <linux/pagemap.h>
-#include <linux/hugetlb.h>
 #include "internal.h"
 
 static struct dentry *hwpoison_dir;
@@ -14,7 +13,6 @@ static int hwpoison_inject(void *data, u64 val)
 {
 	unsigned long pfn = val;
 	struct page *p;
-	struct page *hpage;
 	int err;
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -26,19 +24,18 @@ static int hwpoison_inject(void *data, u64 val)
 		return -ENXIO;
 
 	p = pfn_to_page(pfn);
-	hpage = compound_head(p);
 	/*
 	 * This implies unable to support free buddy pages.
 	 */
-	if (!get_page_unless_zero(hpage))
+	if (!get_page_unless_zero(p))
 		return 0;
 
-	if (!PageLRU(p) && !PageHuge(p))
+	if (!PageLRU(p))
 		shake_page(p, 0);
 	/*
 	 * This implies unable to support non-LRU pages.
 	 */
-	if (!PageLRU(p) && !PageHuge(p))
+	if (!PageLRU(p))
 		return 0;
 
 	/*
@@ -47,9 +44,9 @@ static int hwpoison_inject(void *data, u64 val)
 	 * We temporarily take page lock for try_get_mem_cgroup_from_page().
 	 * __memory_failure() will redo the check reliably inside page lock.
 	 */
-	lock_page(hpage);
-	err = hwpoison_filter(hpage);
-	unlock_page(hpage);
+	lock_page(p);
+	err = hwpoison_filter(p);
+	unlock_page(p);
 	if (err)
 		return 0;
 

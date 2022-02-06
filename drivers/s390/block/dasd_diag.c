@@ -43,7 +43,7 @@ MODULE_LICENSE("GPL");
 			   sizeof(struct dasd_diag_req)) / \
 		           sizeof(struct dasd_diag_bio)) / 2)
 #define DIAG_MAX_RETRIES	32
-#define DIAG_TIMEOUT		50
+#define DIAG_TIMEOUT		50 * HZ
 
 static struct dasd_discipline dasd_diag_discipline;
 
@@ -360,8 +360,6 @@ dasd_diag_check_device(struct dasd_device *device)
 		goto out;
 	}
 
-	device->default_expires = DIAG_TIMEOUT;
-
 	/* Figure out position of label block */
 	switch (private->rdc_data.vdev_class) {
 	case DEV_CLASS_FBA:
@@ -565,7 +563,7 @@ static struct dasd_ccw_req *dasd_diag_build_cp(struct dasd_device *memdev,
 	cqr->startdev = memdev;
 	cqr->memdev = memdev;
 	cqr->block = block;
-	cqr->expires = memdev->default_expires * HZ;
+	cqr->expires = DIAG_TIMEOUT;
 	cqr->status = DASD_CQR_FILLED;
 	return cqr;
 }

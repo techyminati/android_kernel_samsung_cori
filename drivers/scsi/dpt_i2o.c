@@ -1290,7 +1290,7 @@ static int adpt_i2o_post_wait(adpt_hba* pHba, u32* msg, int len, int timeout)
 	ulong flags = 0;
 	struct adpt_i2o_post_wait_data *p1, *p2;
 	struct adpt_i2o_post_wait_data *wait_data =
-		kmalloc(sizeof(struct adpt_i2o_post_wait_data), GFP_ATOMIC);
+		kmalloc(sizeof(struct adpt_i2o_post_wait_data),GFP_KERNEL);
 	DECLARE_WAITQUEUE(wait, current);
 
 	if (!wait_data)
@@ -2640,13 +2640,6 @@ static s32 adpt_i2o_reparse_lct(adpt_hba* pHba)
 				continue;
 			}
 			bus_no = buf[0]>>16;
-			if (bus_no >= MAX_CHANNEL) {	/* Something wrong skip it */
-				printk(KERN_WARNING
-					"%s: Channel number %d out of range\n",
-					pHba->name, bus_no);
-				continue;
-			}
-
 			scsi_id = buf[1];
 			scsi_lun = (buf[2]>>8 )&0xff;
 			pDev = pHba->channel[bus_no].device[scsi_id];
@@ -2658,8 +2651,7 @@ static s32 adpt_i2o_reparse_lct(adpt_hba* pHba)
 				pDev = pDev->next_lun;
 			}
 			if(!pDev ) { // Something new add it
-				d = kmalloc(sizeof(struct i2o_device),
-					    GFP_ATOMIC);
+				d = kmalloc(sizeof(struct i2o_device), GFP_KERNEL);
 				if(d==NULL)
 				{
 					printk(KERN_CRIT "Out of memory for I2O device data.\n");
@@ -2675,11 +2667,13 @@ static s32 adpt_i2o_reparse_lct(adpt_hba* pHba)
 				adpt_i2o_report_hba_unit(pHba, d);
 				adpt_i2o_install_device(pHba, d);
 	
+				if(bus_no >= MAX_CHANNEL) {	// Something wrong skip it
+					printk(KERN_WARNING"%s: Channel number %d out of range \n", pHba->name, bus_no);
+					continue;
+				}
 				pDev = pHba->channel[bus_no].device[scsi_id];	
 				if( pDev == NULL){
-					pDev =
-					  kzalloc(sizeof(struct adpt_device),
-						  GFP_ATOMIC);
+					pDev =  kzalloc(sizeof(struct adpt_device),GFP_KERNEL);
 					if(pDev == NULL) {
 						return -ENOMEM;
 					}
@@ -2688,9 +2682,7 @@ static s32 adpt_i2o_reparse_lct(adpt_hba* pHba)
 					while (pDev->next_lun) {
 						pDev = pDev->next_lun;
 					}
-					pDev = pDev->next_lun =
-					  kzalloc(sizeof(struct adpt_device),
-						  GFP_ATOMIC);
+					pDev = pDev->next_lun = kzalloc(sizeof(struct adpt_device),GFP_KERNEL);
 					if(pDev == NULL) {
 						return -ENOMEM;
 					}
@@ -3135,7 +3127,7 @@ static int adpt_i2o_lct_get(adpt_hba* pHba)
 		if (pHba->lct == NULL) {
 			pHba->lct = dma_alloc_coherent(&pHba->pDev->dev,
 					pHba->lct_size, &pHba->lct_pa,
-					GFP_ATOMIC);
+					GFP_KERNEL);
 			if(pHba->lct == NULL) {
 				printk(KERN_CRIT "%s: Lct Get failed. Out of memory.\n",
 					pHba->name);

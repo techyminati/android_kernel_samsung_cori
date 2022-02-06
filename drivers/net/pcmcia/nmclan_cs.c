@@ -146,6 +146,7 @@ Include Files
 #include <linux/ioport.h>
 #include <linux/bitops.h>
 
+#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cisreg.h>
 #include <pcmcia/cistpl.h>
@@ -458,8 +459,9 @@ static int nmclan_probe(struct pcmcia_device *link)
     link->priv = dev;
     
     spin_lock_init(&lp->bank_lock);
-    link->resource[0]->end = 32;
-    link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
+    link->io.NumPorts1 = 32;
+    link->io.Attributes1 = IO_DATA_PATH_WIDTH_AUTO;
+    link->io.IOAddrLines = 5;
     link->conf.Attributes = CONF_ENABLE_IRQ;
     link->conf.IntType = INT_MEMORY_AND_IO;
     link->conf.ConfigIndex = 1;
@@ -643,8 +645,7 @@ static int nmclan_config(struct pcmcia_device *link)
 
   dev_dbg(&link->dev, "nmclan_config\n");
 
-  link->io_lines = 5;
-  ret = pcmcia_request_io(link);
+  ret = pcmcia_request_io(link, &link->io);
   if (ret)
 	  goto failed;
   ret = pcmcia_request_exclusive_irq(link, mace_interrupt);
@@ -655,7 +656,7 @@ static int nmclan_config(struct pcmcia_device *link)
 	  goto failed;
 
   dev->irq = link->irq;
-  dev->base_addr = link->resource[0]->start;
+  dev->base_addr = link->io.BasePort1;
 
   ioaddr = dev->base_addr;
 
@@ -757,20 +758,29 @@ static void nmclan_reset(struct net_device *dev)
 
 #if RESET_XILINX
   struct pcmcia_device *link = &lp->link;
-  u8 OrigCorValue;
+  conf_reg_t reg;
+  u_long OrigCorValue; 
 
   /* Save original COR value */
-  pcmcia_read_config_byte(link, CISREG_COR, &OrigCorValue);
+  reg.Function = 0;
+  reg.Action = CS_READ;
+  reg.Offset = CISREG_COR;
+  reg.Value = 0;
+  pcmcia_access_configuration_register(link, &reg);
+  OrigCorValue = reg.Value;
 
   /* Reset Xilinx */
-  dev_dbg(&link->dev, "nmclan_reset: OrigCorValue=0x%x, resetting...\n",
+  reg.Action = CS_WRITE;
+  reg.Offset = CISREG_COR;
+  dev_dbg(&link->dev, "nmclan_reset: OrigCorValue=0x%lX, resetting...\n",
 	OrigCorValue);
-  pcmcia_write_config_byte(link, CISREG_COR, COR_SOFT_RESET);
+  reg.Value = COR_SOFT_RESET;
+  pcmcia_access_configuration_register(link, &reg);
   /* Need to wait for 20 ms for PCMCIA to finish reset. */
 
   /* Restore original COR configuration index */
-  pcmcia_write_config_byte(link, CISREG_COR,
-			  (COR_LEVEL_REQ | (OrigCorValue & COR_CONFIG_MASK)));
+  reg.Value = COR_LEVEL_REQ | (OrigCorValue & COR_CONFIG_MASK);
+  pcmcia_access_configuration_register(link, &reg);
   /* Xilinx is now completely reset along with the MACE chip. */
   lp->tx_free_frames=AM2150_MAX_TX_FRAMES;
 

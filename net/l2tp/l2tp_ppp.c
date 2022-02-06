@@ -135,10 +135,7 @@ struct pppol2tp_session {
 
 static int pppol2tp_xmit(struct ppp_channel *chan, struct sk_buff *skb);
 
-static const struct ppp_channel_ops pppol2tp_chan_ops = {
-	.start_xmit =  pppol2tp_xmit,
-};
-
+static struct ppp_channel_ops pppol2tp_chan_ops = { pppol2tp_xmit , NULL };
 static const struct proto_ops pppol2tp_ops;
 
 /* Helpers to obtain tunnel/session contexts from sockets.

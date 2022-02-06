@@ -37,9 +37,9 @@ void __cachefiles_printk_object(struct cachefiles_object *object,
 
 	printk(KERN_ERR "%sobject: OBJ%x\n",
 	       prefix, object->fscache.debug_id);
-	printk(KERN_ERR "%sobjstate=%s fl=%lx wbusy=%x ev=%lx[%lx]\n",
+	printk(KERN_ERR "%sobjstate=%s fl=%lx swfl=%lx ev=%lx[%lx]\n",
 	       prefix, fscache_object_states[object->fscache.state],
-	       object->fscache.flags, work_busy(&object->fscache.work),
+	       object->fscache.flags, object->fscache.work.flags,
 	       object->fscache.events,
 	       object->fscache.event_mask & FSCACHE_OBJECT_EVENTS_MASK);
 	printk(KERN_ERR "%sops=%u inp=%u exc=%u\n",
@@ -212,7 +212,7 @@ wait_for_old_object:
 
 		/* if the object we're waiting for is queued for processing,
 		 * then just put ourselves on the queue behind it */
-		if (work_pending(&xobject->fscache.work)) {
+		if (slow_work_is_queued(&xobject->fscache.work)) {
 			_debug("queue OBJ%x behind OBJ%x immediately",
 			       object->fscache.debug_id,
 			       xobject->fscache.debug_id);
@@ -220,7 +220,8 @@ wait_for_old_object:
 		}
 
 		/* otherwise we sleep until either the object we're waiting for
-		 * is done, or the fscache_object is congested */
+		 * is done, or the slow-work facility wants the thread back to
+		 * do other work */
 		wq = bit_waitqueue(&xobject->flags, CACHEFILES_OBJECT_ACTIVE);
 		init_wait(&wait);
 		requeue = false;
@@ -228,8 +229,8 @@ wait_for_old_object:
 			prepare_to_wait(wq, &wait, TASK_UNINTERRUPTIBLE);
 			if (!test_bit(CACHEFILES_OBJECT_ACTIVE, &xobject->flags))
 				break;
-
-			requeue = fscache_object_sleep_till_congested(&timeout);
+			requeue = slow_work_sleep_till_thread_needed(
+				&object->fscache.work, &timeout);
 		} while (timeout > 0 && !requeue);
 		finish_wait(wq, &wait);
 

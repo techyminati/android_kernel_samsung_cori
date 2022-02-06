@@ -338,7 +338,8 @@ acpi_ns_lookup(union acpi_generic_state *scope_info,
 			 */
 			while (!acpi_ns_opens_scope(prefix_node->type) &&
 			       prefix_node->type != ACPI_TYPE_ANY) {
-				prefix_node = prefix_node->parent;
+				prefix_node =
+				    acpi_ns_get_parent_node(prefix_node);
 			}
 		}
 	}
@@ -418,7 +419,7 @@ acpi_ns_lookup(union acpi_generic_state *scope_info,
 				/* Backup to the parent node */
 
 				num_carats++;
-				this_node = this_node->parent;
+				this_node = acpi_ns_get_parent_node(this_node);
 				if (!this_node) {
 
 					/* Current scope has no parent scope */
@@ -432,7 +433,7 @@ acpi_ns_lookup(union acpi_generic_state *scope_info,
 
 			if (search_parent_flag == ACPI_NS_NO_UPSEARCH) {
 				ACPI_DEBUG_PRINT((ACPI_DB_NAMES,
-						  "Search scope is [%4.4s], path has %u carat(s)\n",
+						  "Search scope is [%4.4s], path has %d carat(s)\n",
 						  acpi_ut_get_node_name
 						  (this_node), num_carats));
 			}
@@ -494,7 +495,7 @@ acpi_ns_lookup(union acpi_generic_state *scope_info,
 			path++;
 
 			ACPI_DEBUG_PRINT((ACPI_DB_NAMES,
-					  "Multi Pathname (%u Segments, Flags=%X)\n",
+					  "Multi Pathname (%d Segments, Flags=%X)\n",
 					  num_segments, flags));
 			break;
 

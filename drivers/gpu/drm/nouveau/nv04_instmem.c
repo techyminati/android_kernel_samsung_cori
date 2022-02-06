@@ -49,8 +49,10 @@ nv04_instmem_determine_amount(struct drm_device *dev)
 	NV_DEBUG(dev, "RAMIN size: %dKiB\n", dev_priv->ramin_rsvd_vram >> 10);
 
 	/* Clear all of it, except the BIOS image that's in the first 64KiB */
+	dev_priv->engine.instmem.prepare_access(dev, true);
 	for (i = 64 * 1024; i < dev_priv->ramin_rsvd_vram; i += 4)
 		nv_wi32(dev, i, 0x00000000);
+	dev_priv->engine.instmem.finish_access(dev);
 }
 
 static void
@@ -104,7 +106,7 @@ int nv04_instmem_init(struct drm_device *dev)
 {
 	struct drm_nouveau_private *dev_priv = dev->dev_private;
 	uint32_t offset;
-	int ret;
+	int ret = 0;
 
 	nv04_instmem_determine_amount(dev);
 	nv04_instmem_configure_fixed_tables(dev);
@@ -127,14 +129,14 @@ int nv04_instmem_init(struct drm_device *dev)
 			offset = 0x40000;
 	}
 
-	ret = drm_mm_init(&dev_priv->ramin_heap, offset,
-			  dev_priv->ramin_rsvd_vram - offset);
+	ret = nouveau_mem_init_heap(&dev_priv->ramin_heap,
+				    offset, dev_priv->ramin_rsvd_vram - offset);
 	if (ret) {
-		NV_ERROR(dev, "Failed to init RAMIN heap: %d\n", ret);
-		return ret;
+		dev_priv->ramin_heap = NULL;
+		NV_ERROR(dev, "Failed to init RAMIN heap\n");
 	}
 
-	return 0;
+	return ret;
 }
 
 void
@@ -184,7 +186,12 @@ nv04_instmem_unbind(struct drm_device *dev, struct nouveau_gpuobj *gpuobj)
 }
 
 void
-nv04_instmem_flush(struct drm_device *dev)
+nv04_instmem_prepare_access(struct drm_device *dev, bool write)
+{
+}
+
+void
+nv04_instmem_finish_access(struct drm_device *dev)
 {
 }
 

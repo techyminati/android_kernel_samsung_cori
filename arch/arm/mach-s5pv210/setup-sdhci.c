@@ -26,9 +26,9 @@
 
 char *s5pv210_hsmmc_clksrcs[4] = {
 	[0] = "hsmmc",		/* HCLK */
-	/* [1] = "hsmmc",	- duplicate HCLK entry */
+	[1] = "hsmmc",		/* HCLK */
 	[2] = "sclk_mmc",	/* mmc_bus */
-	/* [3] = NULL,		- reserved */
+	/*[4] = reserved */
 };
 
 void s5pv210_setup_sdhci_cfg_card(struct platform_device *dev,
